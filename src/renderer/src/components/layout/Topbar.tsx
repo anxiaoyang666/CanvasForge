@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
-import { Aperture, BookOpen, Image as ImageIcon, PanelRightClose, PanelRightOpen, PencilLine, Plus } from 'lucide-react'
+import { BookOpen, Image as ImageIcon, PanelRightClose, PanelRightOpen, PencilLine, Plus } from 'lucide-react'
 import { useAppStore } from '@renderer/store/app-store'
+import logoMark from '@renderer/assets/logo-mark.svg'
 
 export function Topbar(): JSX.Element {
   const { settings, settingsVisible, view, setView, toggleSettings, createConversation } = useAppStore()
@@ -10,7 +11,7 @@ export function Topbar(): JSX.Element {
     <header className="topbar">
       <div className="brand">
         <div className="brand-mark" aria-hidden="true">
-          <Aperture size={20} />
+          <img src={logoMark} alt="" />
         </div>
         <div className="brand-copy">
           <h1>CanvasForge</h1>

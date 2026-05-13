@@ -334,7 +334,7 @@ button:disabled {
 
 .session-line {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 16px 24px;
+  grid-template-columns: minmax(0, 1fr) 16px auto;
   align-items: center;
   gap: 6px;
   width: 100%;
@@ -358,6 +358,44 @@ button:disabled {
 .session-delete {
   flex: 0 0 auto;
   justify-self: end;
+}
+
+.session-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.session-action {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+}
+
+.session-action:hover:not(:disabled) {
+  background: rgba(69, 120, 255, 0.12);
+  color: var(--ink);
+}
+
+.session-title-input {
+  min-width: 0;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 760;
+  outline: 0;
+}
+
+.session-title-input:focus {
+  border-color: rgba(45, 212, 191, 0.58);
+  box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.14);
 }
 
 .session-loading-slot {
@@ -787,7 +825,7 @@ textarea {
 
 .info-icon:hover {
   background: transparent;
-  color: var(--mint-dark);
+  color: #0c6f66;
 }
 
 .dark .info-icon {
@@ -2717,11 +2755,16 @@ button:hover:not(:disabled) {
   place-items: center;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 9px;
-  background:
-    linear-gradient(135deg, rgba(45, 212, 191, 0.88), rgba(69, 120, 255, 0.9)),
-    #11141b;
+  overflow: hidden;
+  background: #11141b;
   color: #fff;
   box-shadow: 0 12px 28px rgba(45, 112, 255, 0.24);
+}
+
+.brand-mark img {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .brand-copy {
@@ -2802,14 +2845,25 @@ button:hover:not(:disabled) {
   box-shadow: 0 14px 26px rgba(21, 24, 29, 0.18);
 }
 
+.primary:hover:not(:disabled) {
+  border-color: transparent;
+  background: #202630;
+  color: #fff;
+}
+
 .top-actions .primary {
   background: #2dd4bf;
   color: #061412;
   box-shadow: 0 14px 28px rgba(45, 212, 191, 0.22);
 }
 
+.top-actions .primary:hover:not(:disabled) {
+  background: #41decf;
+  color: #061412;
+}
+
 .dark .primary,
-.dark .primary:hover {
+.dark .primary:hover:not(:disabled) {
   background: #2dd4bf;
   color: #061412;
   box-shadow: 0 14px 28px rgba(45, 212, 191, 0.16);
@@ -2943,7 +2997,7 @@ button:hover:not(:disabled) {
 }
 
 .session-line {
-  grid-template-columns: 28px minmax(0, 1fr) 16px 24px;
+  grid-template-columns: 28px minmax(0, 1fr) 16px auto;
 }
 
 .session-glyph {
@@ -3360,6 +3414,11 @@ textarea {
   border-radius: 5px;
 }
 
+.segmented button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.68);
+  color: #3f4956;
+}
+
 .segmented .on {
   background: #15181d;
   color: #fff;
@@ -3368,6 +3427,11 @@ textarea {
 
 .dark .segmented {
   background: #11151c;
+}
+
+.dark .segmented button:hover:not(:disabled) {
+  background: #22302b;
+  color: #dbe8e1;
 }
 
 .dark .segmented .on {
@@ -3501,6 +3565,17 @@ textarea {
   border-radius: 6px;
 }
 
+.dark .prompt-template-card-actions button {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: #202631;
+  color: #dbe8e1;
+}
+
+.dark .prompt-template-card-actions button:hover:not(:disabled) {
+  background: #293241;
+  color: #f2f5f8;
+}
+
 .prompt-template-card-actions .primary {
   background: #15181d;
   border-color: #15181d;
@@ -3511,6 +3586,23 @@ textarea {
   background: #2dd4bf;
   border-color: #2dd4bf;
   color: #061412;
+}
+
+.dark .prompt-template-card-actions .primary:hover:not(:disabled) {
+  background: #41decf;
+  border-color: #41decf;
+  color: #061412;
+}
+
+.dark .prompt-template-card-actions .danger {
+  border-color: rgba(255, 173, 180, 0.24);
+  background: #3b2227;
+  color: #ffadb4;
+}
+
+.dark .prompt-template-card-actions .danger:hover:not(:disabled) {
+  background: #4a2830;
+  color: #ffd2d6;
 }
 
 .empty-state {

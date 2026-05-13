@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type JSX } from 'react'
-import { Check, Copy, Download, Heart, RotateCcw, SquarePen, Trash2 } from 'lucide-react'
+import { Check, Copy, Download, Heart, RefreshCcw, RotateCcw, SquarePen, Trash2 } from 'lucide-react'
 import type { ImageHistoryItem } from '@shared/types'
 import { useAppStore } from '@renderer/store/app-store'
 import { PreviewModal } from '@renderer/components/preview/PreviewModal'
@@ -23,7 +23,7 @@ export function ImageTile({
   lockAspectRatio?: boolean
   onSelectedChange?: (selected: boolean) => void
 }): JSX.Element {
-  const { addHistoryAsReference, deleteHistory, toggleFavorite, reuseHistory, notify } = useAppStore()
+  const { addHistoryAsReference, deleteHistory, retryFailedImage, toggleFavorite, reuseHistory, notify } = useAppStore()
   const [previewOpen, setPreviewOpen] = useState(false)
   const [errorDetailsOpen, setErrorDetailsOpen] = useState(false)
   const tileRef = useRef<HTMLElement | null>(null)
@@ -89,6 +89,15 @@ export function ImageTile({
       >
         {selectionControl}
         <div className="art-tools">
+          <button
+            title="重试生成"
+            onClick={(event) => {
+              event.stopPropagation()
+              void retryFailedImage(item)
+            }}
+          >
+            <RefreshCcw size={14} />
+          </button>
           <button
             title="删除"
             onClick={(event) => {

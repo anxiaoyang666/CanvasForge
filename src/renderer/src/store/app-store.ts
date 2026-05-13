@@ -75,6 +75,7 @@ type AppState = {
   setActiveConversation: (id: string) => Promise<void>
   createConversation: (template?: ConversationCreateInput, options?: { silent?: boolean }) => Promise<void>
   deleteConversation: (id: string) => Promise<void>
+  renameConversation: (id: string, title: string) => Promise<void>
   updateActiveConversation: (input: ConversationUpdate) => Promise<void>
   updateSettings: (input: ProviderSettingsUpdate) => Promise<void>
   importReferenceFiles: (files: File[]) => Promise<void>
@@ -90,6 +91,7 @@ type AppState = {
   reloadHistory: (options?: Partial<HistoryListOptions>) => Promise<void>
   deleteHistory: (id: string) => Promise<void>
   deleteHistoryItems: (ids: string[]) => Promise<void>
+  retryFailedImage: (item: ImageHistoryItem) => Promise<void>
   toggleFavorite: (item: ImageHistoryItem) => Promise<void>
   setFavoriteForHistoryItems: (items: ImageHistoryItem[], favorite: boolean) => Promise<void>
   reuseHistory: (item: ImageHistoryItem) => Promise<void>
@@ -235,6 +237,28 @@ export const useAppStore = create<AppState>((set, get) => ({
     delete runsByConversation[id]
     set({ conversations, activeConversationId, runsByConversation })
     get().notify('已删除会话，历史记录已保留')
+  },
+  renameConversation: async (id, title) => {
+    const nextTitle = title.trim()
+    if (!nextTitle) {
+      get().notify('会话名称不能为空')
+      return
+    }
+    const previous = get().conversations.find((item) => item.id === id)
+    if (!previous || previous.title === nextTitle) return
+    set({
+      conversations: get().conversations.map((item) =>
+        item.id === id ? { ...item, title: nextTitle, updatedAt: new Date().toISOString() } : item
+      )
+    })
+    try {
+      const updated = await window.canvasForge.conversation.update(id, { title: nextTitle })
+      set({ conversations: get().conversations.map((item) => (item.id === id ? updated : item)) })
+      get().notify('会话已重命名')
+    } catch (error) {
+      set({ conversations: get().conversations.map((item) => (item.id === id ? previous : item)) })
+      get().notify(error instanceof Error ? `重命名失败：${error.message}` : '重命名失败')
+    }
   },
   updateActiveConversation: async (input) => {
     const id = get().activeConversationId
@@ -604,6 +628,76 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     set({ runsByConversation })
     get().notify(`已删除 ${selectedIds.size} 项`)
+  },
+  retryFailedImage: async (item) => {
+    const state = get()
+    let conversationId = item.conversationId || state.activeConversationId
+    if (!conversationId) {
+      await get().createConversation({ ratio: item.ratio, size: item.size || getDefaultImageSize(item.ratio), quality: item.quality }, { silent: true })
+      conversationId = get().activeConversationId
+    }
+    if (!conversationId) return
+
+    const conversation = get().conversations.find((entry) => entry.id === conversationId)
+    const startedAt = Date.now()
+    const input: GenerateImageInput = {
+      conversationId,
+      prompt: item.prompt,
+      model: item.model || conversation?.model || state.settings?.defaultModel || DEFAULT_MODEL,
+      ratio: item.ratio,
+      size: item.size || getDefaultImageSize(item.ratio),
+      quality: item.quality,
+      n: 1,
+      outputFormat: conversation?.outputFormat || DEFAULT_IMAGE_OUTPUT_FORMAT,
+      outputCompression: conversation?.outputCompression ?? undefined,
+      background: conversation?.background,
+      moderation: conversation?.moderation,
+      stream: conversation?.stream,
+      partialImages: conversation?.partialImages ?? undefined,
+      inputFidelity: conversation?.inputFidelity ?? undefined,
+      maxRetries: conversation?.maxRetries ?? 0,
+      generationTimeoutSeconds: conversation?.generationTimeoutSeconds,
+      referenceImageIds: item.referenceImages.map((reference) => reference.id)
+    }
+
+    set({ activeConversationId: conversationId, view: 'workspace', generationClockMs: startedAt })
+    startGenerationClock()
+    const nextGenerationState = beginConversationGeneration(conversationId, {
+      generatingByConversation: get().generatingByConversation,
+      startedAtByConversation: get().generationStartedAtByConversation,
+      removedIndexesByRunId: get().removedGenerationIndexesByRunId
+    }, startedAt)
+    set({
+      generatingByConversation: nextGenerationState.generatingByConversation,
+      generationStartedAtByConversation: nextGenerationState.startedAtByConversation,
+      removedGenerationIndexesByRunId: nextGenerationState.removedIndexesByRunId
+    })
+
+    try {
+      get().notify('正在重试失败图片...')
+      const resultPromise = window.canvasForge.image.generate(input)
+      void get().refreshConversationResults(conversationId)
+      const result = await resultPromise
+      const runs = await window.canvasForge.conversation.runs(conversationId)
+      const history = await window.canvasForge.history.list({ query: state.query, sort: state.sort, favoritesOnly: state.favoritesOnly })
+      set({ runsByConversation: { ...get().runsByConversation, [conversationId]: runs }, history })
+      const durationText = result.run.durationMs != null ? `，用时 ${formatDuration(result.run.durationMs)}` : ''
+      get().notify(result.errorMessage ? `重试失败：${result.errorMessage}${durationText}` : `重试完成${durationText}`)
+    } catch (error) {
+      get().notify(error instanceof Error ? `重试失败：${error.message}` : '重试失败')
+    } finally {
+      const finalGenerationState = endConversationGeneration(conversationId, {
+        generatingByConversation: get().generatingByConversation,
+        startedAtByConversation: get().generationStartedAtByConversation,
+        removedIndexesByRunId: get().removedGenerationIndexesByRunId
+      })
+      set({
+        generatingByConversation: finalGenerationState.generatingByConversation,
+        generationStartedAtByConversation: finalGenerationState.startedAtByConversation,
+        removedGenerationIndexesByRunId: finalGenerationState.removedIndexesByRunId
+      })
+      if (Object.keys(finalGenerationState.generatingByConversation).length === 0) stopGenerationClock()
+    }
   },
   toggleFavorite: async (item) => {
     await window.canvasForge.history.favorite(item.id, !item.favorite)

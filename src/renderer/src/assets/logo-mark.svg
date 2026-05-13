@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="CanvasForge">
+  <defs>
+    <linearGradient id="canvasforge-a" x1="20" y1="20" x2="108" y2="108" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#41decf"/>
+      <stop offset="0.58" stop-color="#2dd4bf"/>
+      <stop offset="1" stop-color="#4578ff"/>
+    </linearGradient>
+    <linearGradient id="canvasforge-b" x1="34" y1="80" x2="86" y2="44" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2dd4bf"/>
+      <stop offset="1" stop-color="#8ff8df"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="#11141b"/>
+  <path d="M32 38c0-8.8 7.2-16 16-16h48c8.8 0 16 7.2 16 16v42c0 8.8-7.2 16-16 16H48c-8.8 0-16-7.2-16-16V38Z" fill="none" stroke="url(#canvasforge-a)" stroke-width="10"/>
+  <path d="M32 82 55 57c4.2-4.6 11.6-4.4 15.5.5L94 87H48c-8.8 0-16-7.2-16-16v11Z" fill="url(#canvasforge-b)"/>
+  <path d="M72 51c9.2-1.8 14.7-7.3 16.5-16.5 1.8 9.2 7.3 14.7 16.5 16.5-9.2 1.8-14.7 7.3-16.5 16.5C86.7 58.3 81.2 52.8 72 51Z" fill="#7ff7dc"/>
+  <path d="M48 50c4.8-.9 7.6-3.8 8.5-8.5.9 4.7 3.7 7.6 8.5 8.5-4.8.9-7.6 3.8-8.5 8.5-.9-4.7-3.7-7.6-8.5-8.5Z" fill="#5aa7ff"/>
+  <path d="M93 91h8v8h-8v-8Zm14-12h8v8h-8v-8Zm-2 25h10v10h-10v-10Z" fill="#2dd4bf"/>
+</svg>
