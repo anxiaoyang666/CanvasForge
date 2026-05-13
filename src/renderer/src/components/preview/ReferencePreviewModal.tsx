@@ -15,7 +15,7 @@ export function ReferencePreviewModal({
   const [currentId, setCurrentId] = useState(initialId)
   const currentIndex = Math.max(0, references.findIndex((reference) => reference.id === currentId))
   const reference = references[currentIndex] || references[0]
-  const src = useMemo(() => window.pixai.reference.url(reference.id), [reference.id])
+  const src = useMemo(() => window.canvasForge.reference.url(reference.id), [reference.id])
   const canGoPrevious = currentIndex > 0
   const canGoNext = currentIndex < references.length - 1
 

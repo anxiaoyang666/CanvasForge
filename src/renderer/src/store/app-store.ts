@@ -1,6 +1,12 @@
 import { create } from 'zustand'
 import { formatDuration } from '@shared/duration'
-import { DEFAULT_IMAGE_OUTPUT_FORMAT, DEFAULT_MODEL, getDefaultImageSize } from '@shared/image-options'
+import {
+  DEFAULT_IMAGE_OUTPUT_FORMAT,
+  DEFAULT_MODEL,
+  MAX_IMAGE_MAX_RETRIES,
+  getDefaultImageSize,
+  normalizeImageGenerationTimeoutSeconds
+} from '@shared/image-options'
 import type {
   Conversation,
   ConversationCreateInput,
@@ -19,8 +25,9 @@ import {
   markGenerationRequestRemoved,
   pruneRemovedGenerationIndexesByRunId
 } from './generation-state'
+import type { PromptTemplate } from '../prompt-library'
 
-type View = 'workspace' | 'gallery'
+type View = 'workspace' | 'gallery' | 'prompts'
 
 function normalizeConversationInteger(value: number | null | undefined, min: number, max: number): number | undefined {
   if (value === null || value === undefined) return undefined
@@ -74,6 +81,7 @@ type AppState = {
   addHistoryAsReference: (historyId: string) => Promise<void>
   removeReferenceImage: (referenceImageId: string) => Promise<void>
   reorderReferenceImages: (referenceImageIds: string[]) => Promise<void>
+  applyPromptTemplate: (template: PromptTemplate) => Promise<void>
   inspirePrompt: () => Promise<void>
   enrichPrompt: () => Promise<void>
   generate: () => Promise<void>
@@ -131,12 +139,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     getConversationGenerationStateForId(conversationId, get().generatingByConversation, get().generationStartedAtByConversation),
   load: async () => {
     set({ loading: true })
-    const settings = await window.pixai.settings.get()
-    let conversations = await window.pixai.conversation.list()
-    if (conversations.length === 0) conversations = [await window.pixai.conversation.create()]
+    const settings = await window.canvasForge.settings.get()
+    let conversations = await window.canvasForge.conversation.list()
+    if (conversations.length === 0) conversations = [await window.canvasForge.conversation.create()]
     const activeConversationId = get().activeConversationId || conversations[0]?.id || null
-    const runs = activeConversationId ? await window.pixai.conversation.runs(activeConversationId) : []
-    const history = await window.pixai.history.list({ sort: get().sort })
+    const runs = activeConversationId ? await window.canvasForge.conversation.runs(activeConversationId) : []
+    const history = await window.canvasForge.history.list({ sort: get().sort })
     set({
       settings,
       conversations,
@@ -161,13 +169,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   setActiveConversation: async (id) => {
     set({ activeConversationId: id, view: 'workspace' })
     if (!get().runsByConversation[id]) {
-      const runs = await window.pixai.conversation.runs(id)
+      const runs = await window.canvasForge.conversation.runs(id)
       set({ runsByConversation: { ...get().runsByConversation, [id]: runs } })
     }
   },
   createConversation: async (template = {}, options = {}) => {
     const current = get().conversations.find((item) => item.id === get().activeConversationId) || get().conversations[0] || null
-    const conversation = await window.pixai.conversation.create({
+    const conversation = await window.canvasForge.conversation.create({
       ratio: template.ratio ?? current?.ratio,
       size: template.size ?? current?.size,
       quality: template.quality ?? current?.quality,
@@ -180,6 +188,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       stream: template.stream ?? current?.stream,
       partialImages: template.partialImages ?? current?.partialImages,
       inputFidelity: template.inputFidelity ?? current?.inputFidelity,
+      maxRetries: template.maxRetries ?? current?.maxRetries,
+      generationTimeoutSeconds: template.generationTimeoutSeconds ?? current?.generationTimeoutSeconds,
       autoSaveHistory: template.autoSaveHistory ?? current?.autoSaveHistory,
       keepFailureDetails: template.keepFailureDetails ?? current?.keepFailureDetails
     })
@@ -193,7 +203,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   deleteConversation: async (id) => {
     const deletedConversation = get().conversations.find((item) => item.id === id) || null
-    await window.pixai.conversation.delete(id)
+    await window.canvasForge.conversation.delete(id)
     let conversations = get().conversations.filter((item) => item.id !== id)
     if (conversations.length === 0) {
       const runsByConversation = { ...get().runsByConversation }
@@ -212,6 +222,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         stream: deletedConversation?.stream,
         partialImages: deletedConversation?.partialImages,
         inputFidelity: deletedConversation?.inputFidelity,
+        maxRetries: deletedConversation?.maxRetries,
+        generationTimeoutSeconds: deletedConversation?.generationTimeoutSeconds,
         autoSaveHistory: deletedConversation?.autoSaveHistory,
         keepFailureDetails: deletedConversation?.keepFailureDetails
       }, { silent: true })
@@ -237,6 +249,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (input.partialImages !== undefined) {
       normalizedBase.partialImages = normalizeConversationOptionalInteger(input.partialImages, 0, 3) ?? null
     }
+    if (input.maxRetries !== undefined) {
+      normalizedBase.maxRetries = normalizeConversationInteger(input.maxRetries, 0, MAX_IMAGE_MAX_RETRIES) ?? 0
+    }
+    if (input.generationTimeoutSeconds !== undefined) {
+      normalizedBase.generationTimeoutSeconds = normalizeImageGenerationTimeoutSeconds(input.generationTimeoutSeconds)
+    }
     const normalized =
       normalizedBase.ratio !== undefined && normalizedBase.size === undefined
         ? { ...normalizedBase, size: getDefaultImageSize(normalizedBase.ratio) }
@@ -248,16 +266,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       )
     })
     if (draftPromptOnly) {
-      void window.pixai.conversation.update(id, normalized).catch((error) => {
+      void window.canvasForge.conversation.update(id, normalized).catch((error) => {
         get().notify(error instanceof Error ? error.message : '草稿保存失败')
       })
       return
     }
-    const updated = await window.pixai.conversation.update(id, normalized)
+    const updated = await window.canvasForge.conversation.update(id, normalized)
     set({ conversations: get().conversations.map((item) => (item.id === id ? updated : item)) })
   },
   updateSettings: async (input) => {
-    const settings = await window.pixai.settings.update(input)
+    const settings = await window.canvasForge.settings.update(input)
     set({ settings })
     get().notify('设置已保存')
   },
@@ -270,7 +288,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         mimeType: file.type,
         data: await file.arrayBuffer()
       })))
-      const referenceImages = await window.pixai.reference.importFiles(id, payload)
+      const referenceImages = await window.canvasForge.reference.importFiles(id, payload)
       set({
         conversations: get().conversations.map((item) => (item.id === id ? { ...item, referenceImages } : item))
       })
@@ -290,10 +308,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         .find((item) => item.id === historyId)
     try {
       for (const reference of conversation?.referenceImages || []) {
-        await window.pixai.reference.remove(id, reference.id)
+        await window.canvasForge.reference.remove(id, reference.id)
       }
-      const referenceImages = await window.pixai.reference.addFromHistory(id, historyId)
-      const updated = await window.pixai.conversation.update(id, {
+      const referenceImages = await window.canvasForge.reference.addFromHistory(id, historyId)
+      const updated = await window.canvasForge.conversation.update(id, {
         draftPrompt: sourceItem?.prompt || '',
         ratio: sourceItem?.ratio,
         size: sourceItem?.size || (sourceItem?.ratio ? getDefaultImageSize(sourceItem.ratio) : undefined),
@@ -312,7 +330,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   removeReferenceImage: async (referenceImageId) => {
     const id = get().activeConversationId
     if (!id) return
-    const referenceImages = await window.pixai.reference.remove(id, referenceImageId)
+    const referenceImages = await window.canvasForge.reference.remove(id, referenceImageId)
     set({
       conversations: get().conversations.map((item) => (item.id === id ? { ...item, referenceImages } : item))
     })
@@ -320,18 +338,48 @@ export const useAppStore = create<AppState>((set, get) => ({
   reorderReferenceImages: async (referenceImageIds) => {
     const id = get().activeConversationId
     if (!id) return
-    const referenceImages = await window.pixai.reference.reorder(id, referenceImageIds)
+    const referenceImages = await window.canvasForge.reference.reorder(id, referenceImageIds)
     set({
       conversations: get().conversations.map((item) => (item.id === id ? { ...item, referenceImages } : item))
     })
+  },
+  applyPromptTemplate: async (template) => {
+    const state = get()
+    let conversation = state.conversations.find((item) => item.id === state.activeConversationId) || null
+    if (!conversation) {
+      await get().createConversation(
+        {
+          ratio: template.ratio,
+          size: template.resolution || getDefaultImageSize(template.ratio),
+          quality: template.quality
+        },
+        { silent: true }
+      )
+      conversation = get().conversations.find((item) => item.id === get().activeConversationId) || null
+    }
+    if (!conversation) return
+
+    const patch: ConversationUpdate = {
+      draftPrompt: template.prompt,
+      ratio: template.ratio,
+      size: template.resolution || getDefaultImageSize(template.ratio),
+      quality: template.quality
+    }
+    if (conversation.title === '新会话') {
+      patch.title = template.title
+    }
+
+    await get().updateActiveConversation(patch)
+    set({ view: 'workspace' })
+    get().notify(`已套用「${template.title}」`)
   },
   inspirePrompt: async () => {
     const conversation = get().conversations.find((item) => item.id === get().activeConversationId)
     if (!conversation || get().promptAssistantRunning.inspire) return
     set({ promptAssistantRunning: { ...get().promptAssistantRunning, inspire: true } })
     try {
-      const prompt = await window.pixai.prompt.inspire({ hasReferenceImages: conversation.referenceImages.length > 0 })
-      const updated = await window.pixai.conversation.update(conversation.id, { draftPrompt: prompt })
+      const prompt = await window.canvasForge.prompt.inspire({ hasReferenceImages: conversation.referenceImages.length > 0 })
+      const updated = await window.canvasForge.conversation.update(conversation.id, { draftPrompt: prompt })
       set({
         conversations: get().conversations.map((item) => (item.id === conversation.id ? updated : item))
       })
@@ -348,11 +396,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!conversation || !currentPrompt || get().promptAssistantRunning.enrich) return
     set({ promptAssistantRunning: { ...get().promptAssistantRunning, enrich: true } })
     try {
-      const prompt = await window.pixai.prompt.enrich({
+      const prompt = await window.canvasForge.prompt.enrich({
         prompt: currentPrompt,
         hasReferenceImages: conversation.referenceImages.length > 0
       })
-      const updated = await window.pixai.conversation.update(conversation.id, { draftPrompt: prompt })
+      const updated = await window.canvasForge.conversation.update(conversation.id, { draftPrompt: prompt })
       set({
         conversations: get().conversations.map((item) => (item.id === conversation.id ? updated : item))
       })
@@ -385,6 +433,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       stream: conversation.stream,
       partialImages: conversation.partialImages ?? undefined,
       inputFidelity: conversation.inputFidelity ?? undefined,
+      maxRetries: conversation.maxRetries,
+      generationTimeoutSeconds: conversation.generationTimeoutSeconds,
       outputFormat: conversation.outputFormat || DEFAULT_IMAGE_OUTPUT_FORMAT,
       referenceImageIds: conversation.referenceImages.map((reference) => reference.id)
     }
@@ -401,11 +451,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     const titlePatch = conversation.title === '新会话' && prompt ? { title: prompt.length > 18 ? `${prompt.slice(0, 18)}...` : prompt } : null
     try {
       if (titlePatch) await get().updateActiveConversation(titlePatch)
-      const resultPromise = window.pixai.image.generate(input)
+      const resultPromise = window.canvasForge.image.generate(input)
       void get().refreshConversationResults(conversation.id)
       const result = await resultPromise
-      const runs = await window.pixai.conversation.runs(conversation.id)
-      const history = await window.pixai.history.list({ query: state.query, sort: state.sort, favoritesOnly: state.favoritesOnly })
+      const runs = await window.canvasForge.conversation.runs(conversation.id)
+      const history = await window.canvasForge.history.list({ query: state.query, sort: state.sort, favoritesOnly: state.favoritesOnly })
       const runsByConversation = { ...get().runsByConversation, [conversation.id]: runs }
       const runningRunIds = collectRunningRunIds(runsByConversation)
       const prunedGenerationState = pruneRemovedGenerationIndexesByRunId(runningRunIds, {
@@ -440,8 +490,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   refreshConversationResults: async (conversationId) => {
     const state = get()
-    const runs = await window.pixai.conversation.runs(conversationId)
-    const history = await window.pixai.history.list({
+    const runs = await window.canvasForge.conversation.runs(conversationId)
+    const history = await window.canvasForge.history.list({
       query: state.query,
       sort: state.sort,
       favoritesOnly: state.favoritesOnly
@@ -473,11 +523,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         removedGenerationIndexesByRunId: nextGenerationState.removedIndexesByRunId
       })
     }
-    await window.pixai.image.cancel(runId, requestIndex)
+    await window.canvasForge.image.cancel(runId, requestIndex)
   },
   reloadHistory: async (options = {}) => {
     const state = get()
-    const history = await window.pixai.history.list({
+    const history = await window.canvasForge.history.list({
       query: options.query ?? state.query,
       sort: options.sort ?? state.sort,
       favoritesOnly: options.favoritesOnly ?? state.favoritesOnly
@@ -486,7 +536,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   deleteHistory: async (id) => {
     const item = get().history.find((entry) => entry.id === id)
-    await window.pixai.history.delete(id)
+    await window.canvasForge.history.delete(id)
     if (item?.conversationId && item.runId && typeof item.requestIndex === 'number') {
       const activeRun = get().runsByConversation[item.conversationId]?.find((run) => run.id === item.runId && run.status === 'running')
       if (activeRun) {
@@ -504,7 +554,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     await get().reloadHistory()
     if (item?.conversationId) {
-      const runs = await window.pixai.conversation.runs(item.conversationId)
+      const runs = await window.canvasForge.conversation.runs(item.conversationId)
       set({ runsByConversation: { ...get().runsByConversation, [item.conversationId]: runs } })
     }
     get().notify('已删除历史项')
@@ -538,7 +588,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           removedStateChanged = true
         }
       }
-      await window.pixai.history.delete(id)
+      await window.canvasForge.history.delete(id)
     }
     if (removedStateChanged) {
       set({
@@ -550,16 +600,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().reloadHistory()
     const runsByConversation = { ...get().runsByConversation }
     for (const conversationId of affectedConversationIds) {
-      runsByConversation[conversationId] = await window.pixai.conversation.runs(conversationId)
+      runsByConversation[conversationId] = await window.canvasForge.conversation.runs(conversationId)
     }
     set({ runsByConversation })
     get().notify(`已删除 ${selectedIds.size} 项`)
   },
   toggleFavorite: async (item) => {
-    await window.pixai.history.favorite(item.id, !item.favorite)
+    await window.canvasForge.history.favorite(item.id, !item.favorite)
     await get().reloadHistory()
     if (item.conversationId) {
-      const runs = await window.pixai.conversation.runs(item.conversationId)
+      const runs = await window.canvasForge.conversation.runs(item.conversationId)
       set({ runsByConversation: { ...get().runsByConversation, [item.conversationId]: runs } })
     }
   },
@@ -567,12 +617,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (items.length === 0) return
     const affectedConversationIds = new Set(items.map((item) => item.conversationId).filter((id): id is string => Boolean(id)))
     for (const item of items) {
-      await window.pixai.history.favorite(item.id, favorite)
+      await window.canvasForge.history.favorite(item.id, favorite)
     }
     await get().reloadHistory()
     const runsByConversation = { ...get().runsByConversation }
     for (const conversationId of affectedConversationIds) {
-      runsByConversation[conversationId] = await window.pixai.conversation.runs(conversationId)
+      runsByConversation[conversationId] = await window.canvasForge.conversation.runs(conversationId)
     }
     set({ runsByConversation })
     get().notify(favorite ? `已收藏 ${items.length} 项` : `已取消收藏 ${items.length} 项`)
@@ -584,15 +634,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       id = get().activeConversationId
     }
     if (!id) return
-    await window.pixai.conversation.update(id, {
+    await window.canvasForge.conversation.update(id, {
       draftPrompt: item.prompt,
       model: item.model,
       ratio: item.ratio,
       size: item.size || getDefaultImageSize(item.ratio),
       quality: item.quality
     })
-    const conversations = await window.pixai.conversation.list()
-    const runs = await window.pixai.conversation.runs(id)
+    const conversations = await window.canvasForge.conversation.list()
+    const runs = await window.canvasForge.conversation.runs(id)
     set({ conversations, activeConversationId: id, runsByConversation: { ...get().runsByConversation, [id]: runs }, view: 'workspace' })
     get().notify('已回填到当前会话')
   },

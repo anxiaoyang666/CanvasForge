@@ -17,11 +17,11 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "@main/*": ["src/main/*"],
+      "@core/*": ["src/core/*"],
       "@renderer/*": ["src/renderer/src/*"],
       "@shared/*": ["src/shared/*"]
     },
     "types": ["node", "vitest/globals"]
   },
-  "include": ["src", "electron.vite.config.ts", "vitest.config.ts"]
+  "include": ["src", "vite.web.config.ts", "vite.server.config.ts", "vitest.config.ts"]
 }

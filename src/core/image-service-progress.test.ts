@@ -58,7 +58,7 @@ describe('image service progress', () => {
           insertRun: () => run,
           insertHistory,
           updateRun: vi.fn((_id, input) => ({ ...run, ...input, items: [] })),
-          imagesDir: mkdtempSync(join(tmpdir(), 'pixai-progress-test-'))
+          imagesDir: mkdtempSync(join(tmpdir(), 'canvasforge-progress-test-'))
         } as never,
         {
           getPublicSettings: () => ({ baseURL: 'https://example.test', defaultModel: 'gpt-image-2' }),
@@ -126,7 +126,7 @@ describe('image service progress', () => {
           insertRun: () => run,
           insertHistory,
           updateRun: vi.fn((_id, input) => ({ ...run, ...input, items: [] })),
-          imagesDir: mkdtempSync(join(tmpdir(), 'pixai-progress-test-'))
+          imagesDir: mkdtempSync(join(tmpdir(), 'canvasforge-progress-test-'))
         } as never,
         {
           getPublicSettings: () => ({ baseURL: 'https://example.test', defaultModel: 'gpt-image-2' }),
@@ -194,7 +194,7 @@ describe('image service progress', () => {
           insertRun: () => run,
           insertHistory,
           updateRun: vi.fn((_id, input) => ({ ...run, ...input, items: [] })),
-          imagesDir: mkdtempSync(join(tmpdir(), 'pixai-progress-test-'))
+          imagesDir: mkdtempSync(join(tmpdir(), 'canvasforge-progress-test-'))
         } as never,
         {
           getPublicSettings: () => ({ baseURL: 'https://example.test', defaultModel: 'gpt-image-2' }),
@@ -253,7 +253,7 @@ describe('image service progress', () => {
           insertRun: () => run,
           insertHistory,
           updateRun: vi.fn((_id, input) => ({ ...run, ...input, items: [] })),
-          imagesDir: mkdtempSync(join(tmpdir(), 'pixai-progress-test-'))
+          imagesDir: mkdtempSync(join(tmpdir(), 'canvasforge-progress-test-'))
         } as never,
         {
           getPublicSettings: () => ({ baseURL: 'https://example.test', defaultModel: 'gpt-image-2' }),
@@ -281,7 +281,7 @@ describe('image service progress', () => {
 
   it('uses the image edits endpoint and multipart body when reference images are provided', async () => {
     const originalFetch = globalThis.fetch
-    const referencesDir = mkdtempSync(join(tmpdir(), 'pixai-edit-test-'))
+    const referencesDir = mkdtempSync(join(tmpdir(), 'canvasforge-edit-test-'))
     const referencePath = join(referencesDir, 'reference.png')
     writeFileSync(referencePath, Buffer.from('reference'))
     const reference = {
@@ -327,7 +327,7 @@ describe('image service progress', () => {
           insertRunReferences,
           insertHistory: vi.fn((input) => ({ ...input, favorite: false })),
           updateRun: vi.fn((_id, input) => ({ ...run, ...input, items: [] })),
-          imagesDir: mkdtempSync(join(tmpdir(), 'pixai-edit-output-test-'))
+          imagesDir: mkdtempSync(join(tmpdir(), 'canvasforge-edit-output-test-'))
         } as never,
         {
           getPublicSettings: () => ({ baseURL: 'https://example.test', defaultModel: 'gpt-image-2' }),

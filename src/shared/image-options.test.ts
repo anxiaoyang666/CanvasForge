@@ -18,6 +18,7 @@ import {
   formatImageQuality,
   getDefaultImageSize,
   getImageSizeOptions,
+  normalizeImageGenerationTimeoutSeconds,
   ratioToSize,
   supportsImageInputFidelity
 } from './image-options'
@@ -122,5 +123,26 @@ describe('image options', () => {
       stream: true,
       partial_images: 3
     })
+  })
+
+  it('keeps partial image count out of non-streaming requests', () => {
+    expect(
+      buildImageRequestBody({
+        conversationId: 'c1',
+        prompt: 'scene',
+        model: 'gpt-image-2',
+        ratio: '1:1',
+        size: '1024x1024',
+        quality: 'high',
+        n: 1,
+        partialImages: 3
+      })
+    ).not.toHaveProperty('partial_images')
+  })
+
+  it('normalizes image generation timeout seconds', () => {
+    expect(normalizeImageGenerationTimeoutSeconds(12.9)).toBe(12)
+    expect(normalizeImageGenerationTimeoutSeconds(0)).toBe(1)
+    expect(normalizeImageGenerationTimeoutSeconds(Number.NaN)).toBe(300)
   })
 })

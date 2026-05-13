@@ -50,7 +50,7 @@ export function PreviewModal({
   const [favorite, setFavorite] = useState(initialItem.favorite)
   const currentIndex = Math.max(0, items.findIndex((item) => item.id === currentId))
   const item = items[currentIndex] || initialItem
-  const src = useMemo(() => window.pixai.image.url(item.id), [item.id])
+  const src = useMemo(() => window.canvasForge.image.url(item.id), [item.id])
   const metadataRows = useMemo(() => getPreviewMetadataRows(item), [item])
   const canGoPrevious = currentIndex > 0
   const canGoNext = currentIndex < items.length - 1
@@ -210,10 +210,18 @@ export function PreviewModal({
             <button title={fullscreen ? '退出全屏' : '全屏显示'} onClick={() => void toggleFullscreen()}>
               {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
             </button>
-            <button title="复制图片" onClick={() => void window.pixai.image.copy(item.id).then(() => notify('已复制到剪贴板'))}>
+            <button
+              title="复制图片"
+              onClick={() => {
+                notify('正在复制图片...')
+                void window.canvasForge.image.copy(item.id)
+                  .then(() => notify('已复制到剪贴板'))
+                  .catch((error) => notify(error instanceof Error ? `复制失败：${error.message}` : '复制失败'))
+              }}
+            >
               <Copy size={15} />
             </button>
-            <button title="下载图片" onClick={() => void window.pixai.image.download(item.id).then((path) => path && notify('已保存图片'))}>
+            <button title="下载图片" onClick={() => void window.canvasForge.image.download(item.id).then((path) => path && notify('已保存图片'))}>
               <Download size={15} />
             </button>
             <button title={favorite ? '取消收藏' : '收藏'} onClick={() => void handleToggleFavorite()}>
@@ -293,7 +301,7 @@ export function PreviewModal({
                       title="预览参考图"
                       onClick={() => setPreviewReferenceId(reference.id)}
                     >
-                      <img src={window.pixai.reference.url(reference.id)} alt={reference.name} />
+                      <img src={window.canvasForge.reference.url(reference.id)} alt={reference.name} />
                     </button>
                   ))}
                 </div>

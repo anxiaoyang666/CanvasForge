@@ -1,16 +1,8 @@
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { SettingsStore } from './settings'
-
-vi.mock('electron', () => ({
-  safeStorage: {
-    isEncryptionAvailable: () => false,
-    encryptString: (value: string) => Buffer.from(value),
-    decryptString: (value: Buffer) => value.toString('utf8')
-  }
-}))
 
 describe('settings store', () => {
   it('uses a separate default prompt assistant model', () => {
@@ -34,5 +26,5 @@ describe('settings store', () => {
 })
 
 function createStore(): SettingsStore {
-  return new SettingsStore(join(mkdtempSync(join(tmpdir(), 'pixai-settings-test-')), 'settings.json'))
+  return new SettingsStore(join(mkdtempSync(join(tmpdir(), 'canvasforge-settings-test-')), 'settings.json'))
 }

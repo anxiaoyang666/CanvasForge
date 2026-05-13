@@ -9,7 +9,7 @@ import { copySelectedHistoryImages, resolveUniqueTargetPath } from './batch-down
 const tempDirs: string[] = []
 
 function createTempDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'pixai-batch-download-test-'))
+  const dir = mkdtempSync(join(tmpdir(), 'canvasforge-batch-download-test-'))
   tempDirs.push(dir)
   return dir
 }
@@ -32,6 +32,7 @@ function createHistoryItem(input: Partial<ImageHistoryItem> & Pick<ImageHistoryI
     status: 'succeeded',
     errorMessage: null,
     errorDetails: null,
+    retryAttempt: 0,
     favorite: false,
     generationMode: 'text-to-image',
     referenceImages: [],

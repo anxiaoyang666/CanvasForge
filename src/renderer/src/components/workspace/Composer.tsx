@@ -61,7 +61,7 @@ export function Composer({ conversation, generating }: { conversation: Conversat
   }
 
   const isReferenceDrag = (event: DragEvent) => (
-    event.dataTransfer.types.includes('application/x-pixai-reference') || draggedReferenceIdRef.current != null
+    event.dataTransfer.types.includes('application/x-canvasforge-reference') || draggedReferenceIdRef.current != null
   )
 
   const moveReference = (fromIndex: number, toIndex: number) => {
@@ -92,8 +92,12 @@ export function Composer({ conversation, generating }: { conversation: Conversat
       onDrop={handleDrop}
     >
       <div className="composer-head">
+        <div className="composer-title">
+          <span className="eyebrow">PROMPT BOARD</span>
+          <h2>生成指令</h2>
+        </div>
         <div className="composer-tools">
-          <span className="pill good">
+          <span className="pill good mode-pill">
             <Sparkles size={13} />
             {referenceCount > 0 ? `图生图 · ${referenceCount} 张参考图` : '文生图'}
           </span>
@@ -158,7 +162,7 @@ export function Composer({ conversation, generating }: { conversation: Conversat
                   event.stopPropagation()
                   draggedReferenceIdRef.current = reference.id
                   event.dataTransfer.effectAllowed = 'move'
-                  event.dataTransfer.setData('application/x-pixai-reference', reference.id)
+                  event.dataTransfer.setData('application/x-canvasforge-reference', reference.id)
                   setDraggingIndex(index)
                 }}
                 onDragOver={(event) => {
@@ -180,7 +184,7 @@ export function Composer({ conversation, generating }: { conversation: Conversat
                 }}
               >
                 <GripVertical size={13} />
-                <img draggable={false} src={window.pixai.reference.url(reference.id)} alt={reference.name} />
+                <img draggable={false} src={window.canvasForge.reference.url(reference.id)} alt={reference.name} />
                 <button
                   type="button"
                   title="删除参考图"
@@ -197,6 +201,10 @@ export function Composer({ conversation, generating }: { conversation: Conversat
         </div>
       ) : null}
       <div className="prompt-box">
+        <div className="prompt-box-label">
+          <span>Prompt</span>
+          <span>{conversation.draftPrompt.trim().length} 字</span>
+        </div>
         <textarea
           ref={promptRef}
           value={conversation.draftPrompt}
@@ -204,7 +212,7 @@ export function Composer({ conversation, generating }: { conversation: Conversat
           placeholder="描述你想生成的画面，例如：一座明亮的玻璃温室，清晨薄雾漂浮在植物之间，浅绿色与奶白色，自然摄影质感。"
         />
         <div className="prompt-foot">
-          <button className="reference-footer-button" type="button" title="添加参考图" onClick={() => fileInputRef.current?.click()}>
+          <button className="reference-footer-button" type="button" title="添加参考图" aria-label="添加参考图" onClick={() => fileInputRef.current?.click()}>
             <ImagePlus size={17} />
             {referenceCount > 0 ? <span>{referenceCount}</span> : null}
           </button>

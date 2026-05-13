@@ -1,19 +1,16 @@
 {
-  "name": "pixai",
+  "name": "canvasforge",
   "version": "1.0.2",
-  "description": "PixAI Windows desktop image generation app.",
-  "main": "./out/main/index.js",
-  "author": "PixAI",
+  "description": "CanvasForge web image generation app for Docker deployment.",
+  "main": "./out/server/index.mjs",
+  "author": "CanvasForge",
   "homepage": "./",
   "packageManager": "pnpm@10.26.2",
   "scripts": {
-    "predev": "node scripts/rebuild-native.mjs",
-    "dev": "electron-vite dev",
-    "build": "tsc --noEmit && electron-vite build",
-    "preview": "electron-vite preview",
-    "test": "vitest run",
-    "dist": "pnpm build && electron-builder",
-    "postinstall": "electron-builder install-app-deps"
+    "build:web": "tsc --noEmit && vite build --config vite.web.config.ts && vite build --config vite.server.config.ts",
+    "build": "tsc --noEmit && vite build --config vite.web.config.ts && vite build --config vite.server.config.ts",
+    "start": "node out/server/index.mjs",
+    "test": "vitest run"
   },
   "dependencies": {
     "better-sqlite3": "^11.10.0",
@@ -29,58 +26,13 @@
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
     "@vitejs/plugin-react": "^4.3.4",
-    "electron": "^34.0.0",
-    "electron-builder": "^25.1.8",
-    "electron-vite": "^2.3.0",
     "typescript": "^5.7.2",
     "vite": "^5.4.11",
     "vitest": "^2.1.8"
   },
-  "build": {
-    "appId": "com.pixai.desktop",
-    "productName": "PixAI",
-    "directories": {
-      "output": "dist"
-    },
-    "files": [
-      "out/**",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "src/renderer/src/assets/icon.ico",
-        "to": "icon.ico"
-      }
-    ],
-    "asarUnpack": [
-      "**/*.node"
-    ],
-    "win": {
-      "icon": "src/renderer/src/assets/icon.ico",
-      "artifactName": "${productName} Setup ${version}-${arch}.${ext}",
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64",
-            "ia32"
-          ]
-        }
-      ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
-    }
-  },
   "pnpm": {
     "onlyBuiltDependencies": [
-      "electron",
-      "esbuild"
-    ],
-    "ignoredBuiltDependencies": [
+      "esbuild",
       "better-sqlite3"
     ]
   }

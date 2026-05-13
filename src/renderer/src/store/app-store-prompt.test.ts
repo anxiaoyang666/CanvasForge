@@ -16,7 +16,7 @@ describe('app store prompt assistant actions', () => {
   it('writes inspired prompt into the current conversation draft', async () => {
     const conversation = createConversation({ draftPrompt: '' })
     const update = vi.fn((_id: string, input: Partial<Conversation>) => Promise.resolve({ ...conversation, ...input }))
-    installPixaiMock({
+    installCanvasForgeMock({
       prompt: {
         inspire: vi.fn(() => Promise.resolve('新的灵感提示词')),
         enrich: vi.fn()
@@ -32,14 +32,14 @@ describe('app store prompt assistant actions', () => {
 
     await useAppStore.getState().inspirePrompt()
 
-    expect(window.pixai.prompt.inspire).toHaveBeenCalledWith({ hasReferenceImages: false })
+    expect(window.canvasForge.prompt.inspire).toHaveBeenCalledWith({ hasReferenceImages: false })
     expect(update).toHaveBeenCalledWith(conversation.id, { draftPrompt: '新的灵感提示词' })
     expect(useAppStore.getState().conversations[0].draftPrompt).toBe('新的灵感提示词')
   })
 
   it('does not overwrite draft prompt when enrichment fails', async () => {
     const conversation = createConversation({ draftPrompt: '原始提示词' })
-    installPixaiMock({
+    installCanvasForgeMock({
       prompt: {
         inspire: vi.fn(),
         enrich: vi.fn(() => Promise.reject(new Error('request failed')))
@@ -57,12 +57,12 @@ describe('app store prompt assistant actions', () => {
 
     await useAppStore.getState().enrichPrompt()
 
-    expect(window.pixai.conversation.update).not.toHaveBeenCalled()
+    expect(window.canvasForge.conversation.update).not.toHaveBeenCalled()
     expect(useAppStore.getState().conversations[0].draftPrompt).toBe('原始提示词')
   })
 })
 
-function installPixaiMock(mock: {
+function installCanvasForgeMock(mock: {
   prompt: {
     inspire: ReturnType<typeof vi.fn>
     enrich: ReturnType<typeof vi.fn>
@@ -75,7 +75,7 @@ function installPixaiMock(mock: {
     value: {
       setTimeout: globalThis.setTimeout,
       clearInterval: globalThis.clearInterval,
-      pixai: {
+      canvasForge: {
         prompt: mock.prompt,
         conversation: mock.conversation
       }
@@ -101,6 +101,8 @@ function createConversation(input: Partial<Conversation> = {}): Conversation {
     stream: false,
     partialImages: 0,
     inputFidelity: null,
+    maxRetries: 0,
+    generationTimeoutSeconds: 300,
     autoSaveHistory: true,
     keepFailureDetails: false,
     referenceImages: [],

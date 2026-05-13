@@ -231,7 +231,7 @@ export function GalleryPage(): JSX.Element {
   }
 
   const downloadSelected = async () => {
-    const result = await window.pixai.image.downloadMany(Array.from(selectedIds))
+    const result = await window.canvasForge.image.downloadMany(Array.from(selectedIds))
     if (!result) return
     if (result.skipped > 0) {
       notify(`已下载 ${result.saved} 张图片，跳过 ${result.skipped} 项`)
@@ -242,6 +242,14 @@ export function GalleryPage(): JSX.Element {
 
   return (
     <section className="gallery-page">
+      <div className="gallery-hero">
+        <div>
+          <span className="eyebrow">ASSET VAULT</span>
+          <h2>图库资产</h2>
+          <p>集中筛选、批量管理和复用已生成的画面。</p>
+        </div>
+        <span className="summary-chip total">共 <strong>{sortedHistory.length}</strong> 项</span>
+      </div>
       <div className="gallery-tools">
         <div className="search-wrap">
           <Search size={16} />

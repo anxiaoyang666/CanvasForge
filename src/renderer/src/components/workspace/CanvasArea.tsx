@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState, type JSX } from 'react'
 import { Image as ImageIcon, Trash2 } from 'lucide-react'
-import { elapsedMs } from '@shared/duration'
+import { elapsedMs, formatDuration } from '@shared/duration'
 import type { GenerationRun, ImageHistoryItem } from '@shared/types'
 import { useAppStore } from '@renderer/store/app-store'
 import { GallerySelect, type GallerySelectOption } from '@renderer/components/gallery/GallerySelect'
 import { getWorkspaceRunGridSlots, type WorkspaceRunGridSlot } from '@renderer/workspace-placeholders'
 import { getWorkspaceResultSummarySegments } from '@renderer/workspace-summary'
+import { getGenerationAttemptStartedAt } from '@renderer/generation-timing'
 import { GeneratingTile } from './GeneratingTile'
 import { ImageTile } from './ImageTile'
 
@@ -44,7 +45,7 @@ export function CanvasArea({
     orderedRuns.flatMap((run) => {
       const removedIndexes = run.status === 'running' ? removedGenerationIndexesByRunId[run.id] || [] : []
       const slots = run.status === 'running'
-        ? getWorkspaceRunGridSlots(run.n, run.items, removedIndexes)
+        ? getWorkspaceRunGridSlots(run.n, run.items, removedIndexes, run.retryAttempts)
         : run.items.map((item) => ({ type: 'item' as const, requestIndex: item.requestIndex, item }))
       return slots.map((slot) => ({ run, slot }))
     })
@@ -55,6 +56,9 @@ export function CanvasArea({
   const visibleGeneratingCount = orderedSlots.filter(({ slot }) => slot.type === 'placeholder').length
   const generatingCount = visibleGeneratingCount + extraPendingCount
   const generationElapsedMs = generationStartedAt != null ? elapsedMs(generationStartedAt, generationClockMs) : null
+  const generationStatusText = generationElapsedMs != null && generating
+    ? `正在生成 ${generatingCount} 项 · 已耗时 ${formatDuration(generationElapsedMs)}`
+    : null
   const summarySegments = getWorkspaceResultSummarySegments(items.map(({ item }) => item), generatingCount)
   const workspaceEntries: WorkspaceEntry[] = useMemo(() => [
     ...Array.from({ length: extraPendingCount }, (_value, index) => ({
@@ -85,7 +89,7 @@ export function CanvasArea({
     void refreshConversationResults(current.id)
     const timer = window.setInterval(() => {
       void refreshConversationResults(current.id)
-    }, 900)
+    }, 2000)
     return () => window.clearInterval(timer)
   }, [current, generating, refreshConversationResults])
 
@@ -100,9 +104,12 @@ export function CanvasArea({
   return (
     <section className="canvas-area">
       <div className="history-head">
-        <div className="history-title">
-          <ImageIcon size={16} />
-          当前工作区
+        <div>
+          <span className="eyebrow">OUTPUT STREAM</span>
+          <div className="history-title">
+            <ImageIcon size={16} />
+            画面结果
+          </div>
         </div>
         <div className="workspace-head-actions">
           {failedItems.length > 0 ? (
@@ -118,7 +125,7 @@ export function CanvasArea({
           ) : null}
           <div className="workspace-summary" aria-label="工作区结果统计">
             {generationElapsedMs != null && generating ? (
-              <span className="summary-chip active">进行中 {pendingGenerationCount || runningRuns.length} 组</span>
+              <span className="summary-chip active">{generationStatusText}</span>
             ) : null}
             {summarySegments.map((segment) => (
               <span key={segment.key} className={`summary-chip ${segment.tone}`}>
@@ -190,12 +197,17 @@ function renderSlot(
     return <ImageTile key={key} item={slot.item} previewItems={previewItems} />
   }
   const startedAt = Date.parse(run.createdAt)
+  const retryFailure = run.retryFailures?.[slot.requestIndex] ?? null
+  const attemptStartedAt = getGenerationAttemptStartedAt(Number.isFinite(startedAt) ? startedAt : null, retryFailure?.createdAt)
   return (
     <GeneratingTile
       key={key}
       runId={run.id}
       requestIndex={slot.requestIndex}
-      generationElapsedMs={Number.isFinite(startedAt) ? elapsedMs(startedAt, generationClockMs) : null}
+      generationElapsedMs={attemptStartedAt != null ? elapsedMs(attemptStartedAt, generationClockMs) : null}
+      retryAttempt={slot.retryAttempt}
+      maxRetries={run.maxRetries}
+      retryFailure={retryFailure}
     />
   )
 }

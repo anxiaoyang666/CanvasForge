@@ -1,6 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { safeStorage } from 'electron'
 import { DEFAULT_MODEL } from '@shared/image-options'
 import { DEFAULT_PROMPT_MODEL } from '@shared/prompt-options'
 import type { ProviderSettings, ProviderSettingsUpdate } from '@shared/types'
@@ -14,6 +13,12 @@ type SettingsFile = {
   insecureStorage?: boolean
 }
 
+export type SecretStorageAdapter = {
+  isEncryptionAvailable: () => boolean
+  encryptString: (value: string) => Buffer
+  decryptString: (value: Buffer) => string
+}
+
 const defaultSettings: SettingsFile = {
   baseURL: 'https://api.openai.com',
   defaultModel: DEFAULT_MODEL,
@@ -22,12 +27,15 @@ const defaultSettings: SettingsFile = {
 }
 
 export class SettingsStore {
-  constructor(private readonly filePath: string) {
+  constructor(
+    private readonly filePath: string,
+    private readonly secretStorage?: SecretStorageAdapter
+  ) {
     mkdirSync(dirname(filePath), { recursive: true })
   }
 
   getPublicSettings(): ProviderSettings {
-    const settings = this.read()
+    const settings = this.readMigrated()
     return {
       baseURL: settings.baseURL,
       defaultModel: settings.defaultModel,
@@ -38,9 +46,9 @@ export class SettingsStore {
   }
 
   getApiKey(): string | null {
-    const settings = this.read()
-    if (settings.encryptedApiKey && safeStorage.isEncryptionAvailable()) {
-      return safeStorage.decryptString(Buffer.from(settings.encryptedApiKey, 'base64'))
+    const settings = this.readMigrated()
+    if (settings.encryptedApiKey && this.secretStorage?.isEncryptionAvailable()) {
+      return this.secretStorage.decryptString(Buffer.from(settings.encryptedApiKey, 'base64'))
     }
     return settings.plainApiKey || null
   }
@@ -59,8 +67,8 @@ export class SettingsStore {
       delete next.encryptedApiKey
       delete next.plainApiKey
       next.insecureStorage = false
-      if (key && safeStorage.isEncryptionAvailable()) {
-        next.encryptedApiKey = safeStorage.encryptString(key).toString('base64')
+      if (key && this.secretStorage?.isEncryptionAvailable()) {
+        next.encryptedApiKey = this.secretStorage.encryptString(key).toString('base64')
       } else if (key) {
         next.plainApiKey = key
         next.insecureStorage = true
@@ -82,5 +90,32 @@ export class SettingsStore {
 
   private write(settings: SettingsFile): void {
     writeFileSync(this.filePath, `${JSON.stringify(settings, null, 2)}\n`, 'utf8')
+  }
+
+  private readMigrated(): SettingsFile {
+    const settings = this.read()
+    if (!this.secretStorage?.isEncryptionAvailable()) return settings
+
+    if (settings.plainApiKey) {
+      const migrated: SettingsFile = {
+        ...settings,
+        encryptedApiKey: this.secretStorage.encryptString(settings.plainApiKey).toString('base64'),
+        insecureStorage: false
+      }
+      delete migrated.plainApiKey
+      this.write(migrated)
+      return migrated
+    }
+
+    if (settings.insecureStorage) {
+      const migrated: SettingsFile = {
+        ...settings,
+        insecureStorage: false
+      }
+      this.write(migrated)
+      return migrated
+    }
+
+    return settings
   }
 }

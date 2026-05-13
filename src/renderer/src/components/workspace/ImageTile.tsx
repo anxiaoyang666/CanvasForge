@@ -3,6 +3,7 @@ import { Check, Copy, Download, Heart, RotateCcw, SquarePen, Trash2 } from 'luci
 import type { ImageHistoryItem } from '@shared/types'
 import { useAppStore } from '@renderer/store/app-store'
 import { PreviewModal } from '@renderer/components/preview/PreviewModal'
+import { shouldShowFailedImageRetryChip } from '@renderer/generation-retry-display'
 import { ErrorDetailsModal } from './ErrorDetailsModal'
 
 export function ImageTile({
@@ -27,7 +28,7 @@ export function ImageTile({
   const [errorDetailsOpen, setErrorDetailsOpen] = useState(false)
   const tileRef = useRef<HTMLElement | null>(null)
   const [lockedHeight, setLockedHeight] = useState<number | null>(null)
-  const src = useMemo(() => (item.status === 'succeeded' ? window.pixai.image.url(item.id) : ''), [item.id, item.status])
+  const src = useMemo(() => (item.status === 'succeeded' ? window.canvasForge.image.url(item.id) : ''), [item.id, item.status])
   const openPreview = () => {
     if (item.status === 'succeeded') setPreviewOpen(true)
   }
@@ -35,6 +36,7 @@ export function ImageTile({
   const tileStyle = useMemo<CSSProperties | undefined>(() => (
     lockAspectRatio && lockedHeight != null ? { height: `${lockedHeight}px` } : undefined
   ), [lockAspectRatio, lockedHeight])
+  const showFailedRetryChip = shouldShowFailedImageRetryChip(item.retryAttempt)
   const selectionControl = selectable ? (
     <button
       type="button"
@@ -99,6 +101,7 @@ export function ImageTile({
         </div>
         <div className="fail-content">
           <strong>{item.errorMessage || '生成失败'}</strong>
+          {showFailedRetryChip ? <span className="retry-chip">{`重试第 ${item.retryAttempt} 次`}</span> : null}
         </div>
         {errorDetailsOpen ? <ErrorDetailsModal item={item} onClose={() => setErrorDetailsOpen(false)} /> : null}
       </article>
@@ -127,7 +130,10 @@ export function ImageTile({
           title="复制"
           onClick={(event) => {
             event.stopPropagation()
-            void window.pixai.image.copy(item.id).then(() => notify('已复制到剪贴板'))
+            notify('正在复制图片...')
+            void window.canvasForge.image.copy(item.id)
+              .then(() => notify('已复制到剪贴板'))
+              .catch((error) => notify(error instanceof Error ? `复制失败：${error.message}` : '复制失败'))
           }}
         >
           <Copy size={14} />
@@ -136,7 +142,7 @@ export function ImageTile({
           title="下载"
           onClick={(event) => {
             event.stopPropagation()
-            void window.pixai.image.download(item.id).then((path) => path && notify('已保存图片'))
+            void window.canvasForge.image.download(item.id).then((path) => path && notify('已保存图片'))
           }}
         >
           <Download size={14} />

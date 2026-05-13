@@ -46,6 +46,8 @@ describe('app store conversation defaults', () => {
       stream: false,
       partialImages: 0,
       inputFidelity: null,
+      maxRetries: 0,
+      generationTimeoutSeconds: 300,
       autoSaveHistory: true,
       keepFailureDetails: false
     }))
@@ -86,7 +88,7 @@ function installWindow(conversation: {
     value: {
       setTimeout: globalThis.setTimeout,
       clearInterval: globalThis.clearInterval,
-      pixai: {
+      canvasForge: {
         conversation
       }
     },
@@ -111,6 +113,8 @@ function createConversation(input: Partial<Conversation> = {}): Conversation {
     stream: false,
     partialImages: 0,
     inputFidelity: null,
+    maxRetries: 0,
+    generationTimeoutSeconds: 300,
     autoSaveHistory: true,
     keepFailureDetails: false,
     referenceImages: [],

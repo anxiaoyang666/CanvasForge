@@ -176,7 +176,7 @@ describe('image service cancellation', () => {
             return item
           }),
           updateRun: vi.fn((_id, input) => ({ ...run, ...input, items: historyItems })),
-          imagesDir: mkdtempSync(join(tmpdir(), 'pixai-cancel-test-'))
+          imagesDir: mkdtempSync(join(tmpdir(), 'canvasforge-cancel-test-'))
         } as never,
         {
           getPublicSettings: () => ({ baseURL: 'https://example.test', defaultModel: 'gpt-image-2' }),
