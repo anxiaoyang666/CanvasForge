@@ -4,6 +4,7 @@ import { elapsedMs, formatDuration } from '@shared/duration'
 import type { GenerationRun, ImageHistoryItem } from '@shared/types'
 import { useAppStore } from '@renderer/store/app-store'
 import { GallerySelect, type GallerySelectOption } from '@renderer/components/gallery/GallerySelect'
+import { orderHandPosterDerivatives } from '@renderer/hand-poster-history'
 import { getWorkspaceRunGridSlots, type WorkspaceRunGridSlot } from '@renderer/workspace-placeholders'
 import { getWorkspaceResultSummarySegments } from '@renderer/workspace-summary'
 import { getGenerationAttemptStartedAt } from '@renderer/generation-timing'
@@ -17,11 +18,13 @@ const pageSizeSelectOptions: Array<GallerySelectOption<number>> = pageSizeOption
 }))
 
 export function CanvasArea({
+  conversationId,
   runs,
   generationStartedAt,
   generating,
   generationClockMs
 }: {
+  conversationId?: string | null
   runs: GenerationRun[]
   generationStartedAt: number | null
   generating: boolean
@@ -30,6 +33,8 @@ export function CanvasArea({
   const {
     conversations,
     activeConversationId,
+    activePosterConversationId,
+    view,
     generatingByConversation,
     removedGenerationIndexesByRunId
   } = useAppStore()
@@ -37,7 +42,8 @@ export function CanvasArea({
   const deleteHistoryItems = useAppStore((state) => state.deleteHistoryItems)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(30)
-  const current = conversations.find((item) => item.id === activeConversationId)
+  const resolvedConversationId = conversationId || (view === 'poster' ? activePosterConversationId : activeConversationId)
+  const current = conversations.find((item) => item.id === resolvedConversationId)
   const orderedRuns = useMemo(() => [...runs].sort((left, right) => right.createdAt.localeCompare(left.createdAt)), [runs])
   const items = orderedRuns.flatMap((run) => run.items.map((item) => ({ item, run })))
   const failedItems = items.map(({ item }) => item).filter((item) => item.status === 'failed')
@@ -51,7 +57,7 @@ export function CanvasArea({
     })
   ), [orderedRuns, removedGenerationIndexesByRunId])
   const runningRuns = orderedRuns.filter((run) => run.status === 'running')
-  const pendingGenerationCount = activeConversationId ? generatingByConversation[activeConversationId] || 0 : 0
+  const pendingGenerationCount = resolvedConversationId ? generatingByConversation[resolvedConversationId] || 0 : 0
   const extraPendingCount = Math.max(pendingGenerationCount - runningRuns.length, 0)
   const visibleGeneratingCount = orderedSlots.filter(({ slot }) => slot.type === 'placeholder').length
   const generatingCount = visibleGeneratingCount + extraPendingCount
@@ -60,13 +66,13 @@ export function CanvasArea({
     ? `正在生成 ${generatingCount} 项 · 已耗时 ${formatDuration(generationElapsedMs)}`
     : null
   const summarySegments = getWorkspaceResultSummarySegments(items.map(({ item }) => item), generatingCount)
-  const workspaceEntries: WorkspaceEntry[] = useMemo(() => [
-    ...Array.from({ length: extraPendingCount }, (_value, index) => ({
+  const workspaceEntries: WorkspaceEntry[] = useMemo(() => {
+    const pendingEntries = Array.from({ length: extraPendingCount }, (_value, index) => ({
       key: `pending-local-${index}`,
       type: 'pending' as const,
       generationElapsedMs
-    })),
-    ...orderedSlots.map(({ run, slot }) => ({
+    }))
+    const slotEntries = orderedSlots.map(({ run, slot }) => ({
       key: slot.type === 'item'
         ? `${run.id}-item-${slot.item.id}`
         : `${run.id}-pending-${slot.requestIndex}`,
@@ -74,7 +80,11 @@ export function CanvasArea({
       run,
       slot
     }))
-  ], [extraPendingCount, generationElapsedMs, orderedSlots])
+    const orderedSlotEntries = view === 'poster'
+      ? orderHandPosterDerivatives(slotEntries, (entry) => (entry.slot.type === 'item' ? entry.slot.item : null))
+      : slotEntries
+    return [...pendingEntries, ...orderedSlotEntries]
+  }, [extraPendingCount, generationElapsedMs, orderedSlots, view])
   const pageCount = Math.max(1, Math.ceil(workspaceEntries.length / pageSize))
   const visibleEntries = useMemo(() => {
     const start = (page - 1) * pageSize
@@ -95,7 +105,7 @@ export function CanvasArea({
 
   useEffect(() => {
     setPage(1)
-  }, [activeConversationId])
+  }, [resolvedConversationId])
 
   useEffect(() => {
     setPage((currentPage) => Math.min(currentPage, pageCount))

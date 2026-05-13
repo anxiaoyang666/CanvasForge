@@ -77,6 +77,7 @@ export class ImageService {
     const settings = this.settings.getPublicSettings()
     const apiKey = this.settings.getApiKey()
     const conversation = this.database.getConversation(input.conversationId)
+    const workspaceType = input.workspaceType || conversation?.workspaceType || 'canvas'
     const globalVisible = conversation?.autoSaveHistory !== false
     const prompt = input.prompt.trim()
     const model = input.model.trim() || settings.defaultModel
@@ -88,6 +89,7 @@ export class ImageService {
     const generationTimeoutSeconds = normalizeImageGenerationTimeoutSeconds(input.generationTimeoutSeconds)
     const run = this.database.insertRun({
       id: randomUUID(),
+      workspaceType,
       conversationId: input.conversationId,
       prompt,
       model,
@@ -160,6 +162,7 @@ export class ImageService {
             succeededCount += 1
             const item = this.database.insertHistory({
               id,
+              workspaceType,
               conversationId: input.conversationId,
               runId: run.id,
               prompt,
@@ -627,6 +630,7 @@ export class ImageService {
     const errorDetails = existingErrorDetails || createErrorDetails({ ...input, model }, stage, details)
     return this.database.insertHistory({
       id: randomUUID(),
+      workspaceType: run.workspaceType,
       conversationId: input.conversationId,
       runId: run.id,
       prompt: input.prompt.trim(),

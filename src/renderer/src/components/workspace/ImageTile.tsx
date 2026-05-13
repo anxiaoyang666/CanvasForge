@@ -13,6 +13,7 @@ export function ImageTile({
   selected = false,
   showReuseAction = false,
   lockAspectRatio = false,
+  galleryMode = false,
   onSelectedChange
 }: {
   item: ImageHistoryItem
@@ -21,6 +22,7 @@ export function ImageTile({
   selected?: boolean
   showReuseAction?: boolean
   lockAspectRatio?: boolean
+  galleryMode?: boolean
   onSelectedChange?: (selected: boolean) => void
 }): JSX.Element {
   const { addHistoryAsReference, deleteHistory, retryFailedImage, toggleFavorite, reuseHistory, notify } = useAppStore()
@@ -32,7 +34,7 @@ export function ImageTile({
   const openPreview = () => {
     if (item.status === 'succeeded') setPreviewOpen(true)
   }
-  const tileClassName = `art-card ${item.status === 'failed' ? 'failed' : 'image-card'}${selected ? ' selected' : ''}${selectable ? ' selectable' : ''}`
+  const tileClassName = `art-card ${item.status === 'failed' ? 'failed' : 'image-card'}${galleryMode ? ' gallery-image-card' : ''}${selected ? ' selected' : ''}${selectable ? ' selectable' : ''}`
   const tileStyle = useMemo<CSSProperties | undefined>(() => (
     lockAspectRatio && lockedHeight != null ? { height: `${lockedHeight}px` } : undefined
   ), [lockAspectRatio, lockedHeight])
@@ -133,7 +135,13 @@ export function ImageTile({
       }}
     >
       {selectionControl}
-      <img src={src} alt={item.prompt} />
+      <img
+        src={src}
+        alt={item.prompt}
+        decoding={galleryMode ? 'sync' : 'async'}
+        loading={galleryMode ? 'eager' : 'lazy'}
+        draggable={false}
+      />
       <div className="art-tools">
         <button
           title="复制"

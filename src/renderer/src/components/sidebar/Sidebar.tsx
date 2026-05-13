@@ -7,8 +7,10 @@ import { appVersion } from '@shared/app-version'
 
 export function Sidebar(): JSX.Element {
   const {
+    view,
     conversations,
     activeConversationId,
+    activePosterConversationId,
     darkMode,
     loading,
     generatingByConversation,
@@ -17,11 +19,14 @@ export function Sidebar(): JSX.Element {
     renameConversation,
     toggleTheme
   } = useAppStore()
+  const workspaceType = view === 'poster' ? 'hand-poster' : 'canvas'
+  const visibleConversations = conversations.filter((conversation) => conversation.workspaceType === workspaceType)
+  const activeId = workspaceType === 'hand-poster' ? activePosterConversationId : activeConversationId
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
   const editInputRef = useRef<HTMLInputElement | null>(null)
   const themeToggle = getThemeToggleView(darkMode)
-  const activeCount = conversations.length
+  const activeCount = visibleConversations.length
 
   useEffect(() => {
     if (!editingId) return
@@ -58,7 +63,7 @@ export function Sidebar(): JSX.Element {
       <div className="sidebar-head">
         <div>
           <span className="eyebrow">PROJECTS</span>
-          <h2>创作序列</h2>
+          <h2>{workspaceType === 'hand-poster' ? '手抄报序列' : '创作序列'}</h2>
         </div>
         <span className="session-count">
           {loading ? <Loader2 className="spin" size={14} /> : activeCount}
@@ -69,21 +74,22 @@ export function Sidebar(): JSX.Element {
         {loading ? <Loader2 className="spin" size={15} /> : null}
       </div>
       <div className="session-list">
-        {conversations.map((conversation) => {
-          const row = getSessionRowView(conversation.id, activeConversationId, generatingByConversation)
+        {visibleConversations.map((conversation) => {
+          const row = getSessionRowView(conversation.id, activeId, generatingByConversation)
           const displayTitle = conversation.title || '未命名会话'
+          const deleteTitle = row.generating ? '请先取消生成任务' : '删除会话'
           return (
             <div
               key={conversation.id}
               className={row.className}
               role="button"
               tabIndex={0}
-              onClick={() => void setActiveConversation(conversation.id)}
+              onClick={() => void setActiveConversation(conversation.id, workspaceType)}
               onKeyDown={(event) => {
                 if (editingId === conversation.id) return
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault()
-                  void setActiveConversation(conversation.id)
+                  void setActiveConversation(conversation.id, workspaceType)
                 }
               }}
             >
@@ -151,7 +157,7 @@ export function Sidebar(): JSX.Element {
                     <button
                       type="button"
                       className="icon-only danger session-delete"
-                      title="删除会话"
+                      title={deleteTitle}
                       onClick={(event) => {
                         event.stopPropagation()
                         void deleteConversation(conversation.id)

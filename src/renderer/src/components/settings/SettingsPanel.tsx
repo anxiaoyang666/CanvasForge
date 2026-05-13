@@ -1,5 +1,5 @@
-import { useEffect, useState, type JSX } from 'react'
-import { CircleHelp, Settings } from 'lucide-react'
+import { type JSX } from 'react'
+import { CircleHelp } from 'lucide-react'
 import {
   DEFAULT_IMAGE_OUTPUT_FORMAT,
   MAX_IMAGE_MAX_RETRIES,
@@ -18,7 +18,6 @@ import {
   IMAGE_OUTPUT_FORMAT_LABELS,
   supportsImageInputFidelity
 } from '@shared/image-options'
-import { DEFAULT_PROMPT_MODEL } from '@shared/prompt-options'
 import type { ImageQuality, ImageRatio } from '@shared/types'
 import { useAppStore } from '@renderer/store/app-store'
 import { GallerySelect } from '@renderer/components/gallery/GallerySelect'
@@ -27,21 +26,9 @@ const ratios: ImageRatio[] = IMAGE_RATIOS
 const qualities: ImageQuality[] = IMAGE_QUALITIES
 
 export function SettingsPanel(): JSX.Element {
-  const { settings, conversations, activeConversationId, updateActiveConversation, updateSettings } = useAppStore()
+  const { conversations, activeConversationId, updateActiveConversation } = useAppStore()
   const conversation = conversations.find((item) => item.id === activeConversationId) || null
   const isImageToImage = (conversation?.referenceImages.length || 0) > 0
-  const [baseURL, setBaseURL] = useState(settings?.baseURL || 'https://api.openai.com')
-  const [defaultModel, setDefaultModel] = useState(settings?.defaultModel || 'gpt-image-2')
-  const [promptModel, setPromptModel] = useState(settings?.promptModel || DEFAULT_PROMPT_MODEL)
-  const [apiKey, setApiKey] = useState('')
-
-  useEffect(() => {
-    if (settings) {
-      setBaseURL(settings.baseURL)
-      setDefaultModel(settings.defaultModel)
-      setPromptModel(settings.promptModel)
-    }
-  }, [settings])
 
   if (!conversation) return <aside className="inspector" />
 
@@ -58,54 +45,7 @@ export function SettingsPanel(): JSX.Element {
           <h2>参数面板</h2>
         </div>
         <section className="panel">
-          <h3>
-            服务配置
-            <span className={`pill ${settings?.apiKeyStored ? 'good' : 'warn'}`}>{settings?.apiKeyStored ? '已配置' : '未配置'}</span>
-          </h3>
-          <label className="field">
-            <span>Base URL</span>
-            <input className="input-control" value={baseURL} onChange={(event) => setBaseURL(event.target.value)} />
-          </label>
-          <label className="field">
-            <span>API Key</span>
-            <input
-              className="input-control"
-              value={apiKey}
-              onChange={(event) => setApiKey(event.target.value)}
-              type="password"
-              placeholder={settings?.apiKeyStored ? '已保存，留空不修改' : 'sk-...'}
-            />
-          </label>
-          <label className="field">
-            <span>图片默认模型</span>
-            <input className="input-control" value={defaultModel} onChange={(event) => setDefaultModel(event.target.value)} />
-          </label>
-          <label className="field">
-            <span>提示词助手模型</span>
-            <input className="input-control" value={promptModel} onChange={(event) => setPromptModel(event.target.value)} />
-          </label>
-          {settings?.insecureStorage ? <div className="status-error">当前系统无法加密，API Key 已降级保存在本地设置文件中。</div> : null}
-          <button
-            className="primary full"
-            onClick={() => {
-              void updateSettings({ baseURL, defaultModel, promptModel, apiKey: apiKey.trim() ? apiKey : undefined })
-              setApiKey('')
-            }}
-          >
-            <Settings size={15} />
-            保存服务配置
-          </button>
-        </section>
-        <section className="panel">
           <h3>当前会话参数</h3>
-          <label className="field">
-            <span>模型</span>
-            <input
-              className="input-control"
-              value={conversation.model}
-              onChange={(event) => void updateActiveConversation({ model: event.target.value })}
-            />
-          </label>
           <div className="field">
             <span>图片比例</span>
             <div className="segmented">
@@ -177,11 +117,11 @@ export function SettingsPanel(): JSX.Element {
               onChange={(event) => void updateActiveConversation({ maxRetries: Number(event.target.value) })}
             />
           </label>
-          <details className="advanced-settings">
-            <summary>
+          <div className="advanced-settings">
+            <div className="advanced-settings-head">
               <span>高级设置</span>
               <span className={`pill tiny ${isImageToImage ? 'blue' : ''}`}>{isImageToImage ? '图生图' : '文生图'}</span>
-            </summary>
+            </div>
             <div className="advanced-settings-body">
               <ToggleRow
                 label="流式输出"
@@ -353,7 +293,7 @@ export function SettingsPanel(): JSX.Element {
                 </label>
               ) : null}
             </div>
-          </details>
+          </div>
           <ToggleRow
             label="自动写入历史"
             checked={conversation.autoSaveHistory}

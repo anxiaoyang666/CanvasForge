@@ -22,6 +22,7 @@ export function Workspace({
         <>
           <Composer conversation={conversation} generating={activeConversationGenerating} />
           <CanvasArea
+            conversationId={conversation.id}
             runs={runs}
             generationStartedAt={activeConversationStartedAt}
             generating={activeConversationGenerating}

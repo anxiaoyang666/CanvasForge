@@ -16,7 +16,8 @@ import type {
   HistoryListOptions,
   ImageHistoryItem,
   ProviderSettings,
-  ProviderSettingsUpdate
+  ProviderSettingsUpdate,
+  WorkspaceType
 } from '@shared/types'
 import {
   beginConversationGeneration,
@@ -27,7 +28,7 @@ import {
 } from './generation-state'
 import type { PromptTemplate } from '../prompt-library'
 
-type View = 'workspace' | 'gallery' | 'prompts'
+export type View = 'workspace' | 'poster' | 'gallery' | 'prompts'
 
 function normalizeConversationInteger(value: number | null | undefined, min: number, max: number): number | undefined {
   if (value === null || value === undefined) return undefined
@@ -52,11 +53,13 @@ type AppState = {
   settings: ProviderSettings | null
   conversations: Conversation[]
   activeConversationId: string | null
+  activePosterConversationId: string | null
   runsByConversation: Record<string, GenerationRun[]>
   history: ImageHistoryItem[]
   query: string
   sort: 'newest' | 'oldest'
   favoritesOnly: boolean
+  historyWorkspaceType: 'all' | WorkspaceType
   loading: boolean
   generationClockMs: number
   generatingByConversation: Record<string, number>
@@ -72,8 +75,9 @@ type AppState = {
   setQuery: (query: string) => void
   setSort: (sort: 'newest' | 'oldest') => Promise<void>
   setFavoritesOnly: (favoritesOnly: boolean) => Promise<void>
-  setActiveConversation: (id: string) => Promise<void>
-  createConversation: (template?: ConversationCreateInput, options?: { silent?: boolean }) => Promise<void>
+  setHistoryWorkspaceType: (workspaceType: 'all' | WorkspaceType) => Promise<void>
+  setActiveConversation: (id: string, workspaceType?: WorkspaceType) => Promise<void>
+  createConversation: (template?: ConversationCreateInput, options?: { silent?: boolean; workspaceType?: WorkspaceType }) => Promise<Conversation>
   deleteConversation: (id: string) => Promise<void>
   renameConversation: (id: string, title: string) => Promise<void>
   updateActiveConversation: (input: ConversationUpdate) => Promise<void>
@@ -86,6 +90,7 @@ type AppState = {
   inspirePrompt: () => Promise<void>
   enrichPrompt: () => Promise<void>
   generate: () => Promise<void>
+  generateWithInput: (conversationId: string, input: GenerateImageInput, options?: { title?: string }) => Promise<void>
   refreshConversationResults: (conversationId: string) => Promise<void>
   cancelGeneration: (runId?: string, requestIndex?: number) => Promise<void>
   reloadHistory: (options?: Partial<HistoryListOptions>) => Promise<void>
@@ -118,6 +123,10 @@ function collectRunningRunIds(runsByConversation: Record<string, GenerationRun[]
     .flatMap((runs) => runs.filter((run) => run.status === 'running').map((run) => run.id))
 }
 
+function getWorkspaceType(value: WorkspaceType | undefined): WorkspaceType {
+  return value === 'hand-poster' ? 'hand-poster' : 'canvas'
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   view: 'workspace',
   settingsVisible: true,
@@ -125,11 +134,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   settings: null,
   conversations: [],
   activeConversationId: null,
+  activePosterConversationId: null,
   runsByConversation: {},
   history: [],
   query: '',
   sort: 'newest',
   favoritesOnly: false,
+  historyWorkspaceType: 'all',
   loading: false,
   generationClockMs: Date.now(),
   generatingByConversation: {},
@@ -143,15 +154,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ loading: true })
     const settings = await window.canvasForge.settings.get()
     let conversations = await window.canvasForge.conversation.list()
-    if (conversations.length === 0) conversations = [await window.canvasForge.conversation.create()]
-    const activeConversationId = get().activeConversationId || conversations[0]?.id || null
-    const runs = activeConversationId ? await window.canvasForge.conversation.runs(activeConversationId) : []
-    const history = await window.canvasForge.history.list({ sort: get().sort })
+    if (!conversations.some((conversation) => conversation.workspaceType === 'canvas')) {
+      conversations = [await window.canvasForge.conversation.create({ workspaceType: 'canvas' }), ...conversations]
+    }
+    if (!conversations.some((conversation) => conversation.workspaceType === 'hand-poster')) {
+      conversations = [await window.canvasForge.conversation.create({ workspaceType: 'hand-poster', ratio: '4:3', size: '2048x1536', outputFormat: 'png', background: 'opaque' }), ...conversations]
+    }
+    const canvasConversations = conversations.filter((conversation) => conversation.workspaceType !== 'hand-poster')
+    const posterConversations = conversations.filter((conversation) => conversation.workspaceType === 'hand-poster')
+    const activeConversationId = get().activeConversationId || canvasConversations[0]?.id || null
+    const activePosterConversationId = get().activePosterConversationId || posterConversations[0]?.id || null
+    const runsByConversation: Record<string, GenerationRun[]> = {}
+    if (activeConversationId) runsByConversation[activeConversationId] = await window.canvasForge.conversation.runs(activeConversationId)
+    if (activePosterConversationId) runsByConversation[activePosterConversationId] = await window.canvasForge.conversation.runs(activePosterConversationId)
+    const history = await window.canvasForge.history.list({ sort: get().sort, workspaceType: get().historyWorkspaceType })
     set({
       settings,
       conversations,
       activeConversationId,
-      runsByConversation: activeConversationId ? { [activeConversationId]: runs } : {},
+      activePosterConversationId,
+      runsByConversation,
       history,
       loading: false
     })
@@ -168,16 +190,25 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ favoritesOnly })
     await get().reloadHistory({ favoritesOnly })
   },
-  setActiveConversation: async (id) => {
-    set({ activeConversationId: id, view: 'workspace' })
+  setHistoryWorkspaceType: async (historyWorkspaceType) => {
+    set({ historyWorkspaceType })
+    await get().reloadHistory({ workspaceType: historyWorkspaceType })
+  },
+  setActiveConversation: async (id, workspaceType = 'canvas') => {
+    set(workspaceType === 'hand-poster' ? { activePosterConversationId: id, view: 'poster' } : { activeConversationId: id, view: 'workspace' })
     if (!get().runsByConversation[id]) {
       const runs = await window.canvasForge.conversation.runs(id)
       set({ runsByConversation: { ...get().runsByConversation, [id]: runs } })
     }
   },
   createConversation: async (template = {}, options = {}) => {
-    const current = get().conversations.find((item) => item.id === get().activeConversationId) || get().conversations[0] || null
+    const workspaceType = options.workspaceType || template.workspaceType || (get().view === 'poster' ? 'hand-poster' : 'canvas')
+    const activeId = workspaceType === 'hand-poster' ? get().activePosterConversationId : get().activeConversationId
+    const current = get().conversations.find((item) => item.id === activeId)
+      || get().conversations.find((item) => item.workspaceType === workspaceType)
+      || null
     const conversation = await window.canvasForge.conversation.create({
+      workspaceType,
       ratio: template.ratio ?? current?.ratio,
       size: template.size ?? current?.size,
       quality: template.quality ?? current?.quality,
@@ -197,29 +228,44 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
     set({
       conversations: [conversation, ...get().conversations],
-      activeConversationId: conversation.id,
-      view: 'workspace',
+      activeConversationId: workspaceType === 'hand-poster' ? get().activeConversationId : conversation.id,
+      activePosterConversationId: workspaceType === 'hand-poster' ? conversation.id : get().activePosterConversationId,
+      view: workspaceType === 'hand-poster' ? 'poster' : 'workspace',
       runsByConversation: { ...get().runsByConversation, [conversation.id]: [] }
     })
     if (!options.silent) get().notify('已新建会话')
+    return conversation
   },
   deleteConversation: async (id) => {
+    const hasRunningGeneration = Boolean(get().generatingByConversation[id])
+      || (get().runsByConversation[id] || []).some((run) => run.status === 'running')
+    if (hasRunningGeneration) {
+      get().notify('请先取消生成任务')
+      return
+    }
     const deletedConversation = get().conversations.find((item) => item.id === id) || null
-    await window.canvasForge.conversation.delete(id)
+    try {
+      await window.canvasForge.conversation.delete(id)
+    } catch (error) {
+      get().notify(error instanceof Error ? `删除失败：${error.message}` : '删除失败')
+      return
+    }
     let conversations = get().conversations.filter((item) => item.id !== id)
-    if (conversations.length === 0) {
-      const runsByConversation = { ...get().runsByConversation }
-      delete runsByConversation[id]
-      set({ conversations: [], activeConversationId: null, runsByConversation })
-      await get().createConversation({
-        ratio: deletedConversation?.ratio,
-        size: deletedConversation?.size,
+    const deletedWorkspaceType = getWorkspaceType(deletedConversation?.workspaceType)
+    const runsByConversation = { ...get().runsByConversation }
+    delete runsByConversation[id]
+    let sameTypeFallback = conversations.find((item) => getWorkspaceType(item.workspaceType) === deletedWorkspaceType)?.id || null
+    if (!sameTypeFallback) {
+      const replacement = await window.canvasForge.conversation.create({
+        workspaceType: deletedWorkspaceType,
+        ratio: deletedWorkspaceType === 'hand-poster' ? '4:3' : deletedConversation?.ratio,
+        size: deletedWorkspaceType === 'hand-poster' ? '2048x1536' : deletedConversation?.size,
         quality: deletedConversation?.quality,
         model: deletedConversation?.model,
         n: deletedConversation?.n,
-        outputFormat: deletedConversation?.outputFormat,
+        outputFormat: deletedWorkspaceType === 'hand-poster' ? 'png' : deletedConversation?.outputFormat,
         outputCompression: deletedConversation?.outputCompression,
-        background: deletedConversation?.background,
+        background: deletedWorkspaceType === 'hand-poster' ? 'opaque' : deletedConversation?.background,
         moderation: deletedConversation?.moderation,
         stream: deletedConversation?.stream,
         partialImages: deletedConversation?.partialImages,
@@ -228,14 +274,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         generationTimeoutSeconds: deletedConversation?.generationTimeoutSeconds,
         autoSaveHistory: deletedConversation?.autoSaveHistory,
         keepFailureDetails: deletedConversation?.keepFailureDetails
-      }, { silent: true })
-      get().notify('已删除会话，历史记录已保留')
-      return
+      })
+      conversations = [replacement, ...conversations]
+      runsByConversation[replacement.id] = []
+      sameTypeFallback = replacement.id
     }
-    const activeConversationId = get().activeConversationId === id ? conversations[0].id : get().activeConversationId
-    const runsByConversation = { ...get().runsByConversation }
-    delete runsByConversation[id]
-    set({ conversations, activeConversationId, runsByConversation })
+    const activeConversationId = get().activeConversationId === id
+      ? (deletedWorkspaceType === 'canvas' ? sameTypeFallback : get().activeConversationId)
+      : get().activeConversationId
+    const activePosterConversationId = get().activePosterConversationId === id
+      ? (deletedWorkspaceType === 'hand-poster' ? sameTypeFallback : get().activePosterConversationId)
+      : get().activePosterConversationId
+    set({ conversations, activeConversationId, activePosterConversationId, runsByConversation })
     get().notify('已删除会话，历史记录已保留')
   },
   renameConversation: async (id, title) => {
@@ -479,7 +529,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       void get().refreshConversationResults(conversation.id)
       const result = await resultPromise
       const runs = await window.canvasForge.conversation.runs(conversation.id)
-      const history = await window.canvasForge.history.list({ query: state.query, sort: state.sort, favoritesOnly: state.favoritesOnly })
+      const history = await window.canvasForge.history.list({
+        query: state.query,
+        sort: state.sort,
+        favoritesOnly: state.favoritesOnly,
+        workspaceType: state.historyWorkspaceType
+      })
       const runsByConversation = { ...get().runsByConversation, [conversation.id]: runs }
       const runningRunIds = collectRunningRunIds(runsByConversation)
       const prunedGenerationState = pruneRemovedGenerationIndexesByRunId(runningRunIds, {
@@ -512,13 +567,76 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
   },
+  generateWithInput: async (conversationId, input, options = {}) => {
+    const state = get()
+    const conversation = state.conversations.find((item) => item.id === conversationId)
+    if (!conversation) return
+    const generationStartedAt = Date.now()
+    set({ generationClockMs: generationStartedAt })
+    startGenerationClock()
+    const nextGenerationState = beginConversationGeneration(conversationId, {
+      generatingByConversation: state.generatingByConversation,
+      startedAtByConversation: state.generationStartedAtByConversation,
+      removedIndexesByRunId: state.removedGenerationIndexesByRunId
+    }, generationStartedAt)
+    set({
+      generatingByConversation: nextGenerationState.generatingByConversation,
+      generationStartedAtByConversation: nextGenerationState.startedAtByConversation,
+      removedGenerationIndexesByRunId: nextGenerationState.removedIndexesByRunId
+    })
+    try {
+      if (options.title && conversation.title !== options.title) {
+        const updated = await window.canvasForge.conversation.update(conversationId, { title: options.title })
+        set({ conversations: get().conversations.map((item) => (item.id === conversationId ? updated : item)) })
+      }
+      const resultPromise = window.canvasForge.image.generate({ ...input, workspaceType: conversation.workspaceType })
+      void get().refreshConversationResults(conversationId)
+      const result = await resultPromise
+      const runs = await window.canvasForge.conversation.runs(conversationId)
+      const history = await window.canvasForge.history.list({
+        query: state.query,
+        sort: state.sort,
+        favoritesOnly: state.favoritesOnly,
+        workspaceType: state.historyWorkspaceType
+      })
+      const runsByConversation = { ...get().runsByConversation, [conversationId]: runs }
+      const runningRunIds = collectRunningRunIds(runsByConversation)
+      const prunedGenerationState = pruneRemovedGenerationIndexesByRunId(runningRunIds, {
+        generatingByConversation: get().generatingByConversation,
+        startedAtByConversation: get().generationStartedAtByConversation,
+        removedIndexesByRunId: get().removedGenerationIndexesByRunId
+      })
+      set({
+        runsByConversation,
+        history,
+        removedGenerationIndexesByRunId: prunedGenerationState.removedIndexesByRunId
+      })
+      const durationText = result.run.durationMs != null ? `，用时 ${formatDuration(result.run.durationMs)}` : ''
+      get().notify(result.canceled ? `已取消${durationText}` : result.errorMessage ? `生成失败：${result.errorMessage}${durationText}` : `生成完成${durationText}`)
+    } catch (error) {
+      get().notify(error instanceof Error ? `生成失败：${error.message}` : '生成失败')
+    } finally {
+      const finalGenerationState = endConversationGeneration(conversationId, {
+        generatingByConversation: get().generatingByConversation,
+        startedAtByConversation: get().generationStartedAtByConversation,
+        removedIndexesByRunId: get().removedGenerationIndexesByRunId
+      })
+      set({
+        generatingByConversation: finalGenerationState.generatingByConversation,
+        generationStartedAtByConversation: finalGenerationState.startedAtByConversation,
+        removedGenerationIndexesByRunId: finalGenerationState.removedIndexesByRunId
+      })
+      if (Object.keys(finalGenerationState.generatingByConversation).length === 0) stopGenerationClock()
+    }
+  },
   refreshConversationResults: async (conversationId) => {
     const state = get()
     const runs = await window.canvasForge.conversation.runs(conversationId)
     const history = await window.canvasForge.history.list({
       query: state.query,
       sort: state.sort,
-      favoritesOnly: state.favoritesOnly
+      favoritesOnly: state.favoritesOnly,
+      workspaceType: state.historyWorkspaceType
     })
     const runsByConversation = { ...get().runsByConversation, [conversationId]: runs }
     const runningRunIds = collectRunningRunIds(runsByConversation)
@@ -554,7 +672,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const history = await window.canvasForge.history.list({
       query: options.query ?? state.query,
       sort: options.sort ?? state.sort,
-      favoritesOnly: options.favoritesOnly ?? state.favoritesOnly
+      favoritesOnly: options.favoritesOnly ?? state.favoritesOnly,
+      workspaceType: options.workspaceType ?? state.historyWorkspaceType
     })
     set({ history })
   },
@@ -631,10 +750,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   retryFailedImage: async (item) => {
     const state = get()
-    let conversationId = item.conversationId || state.activeConversationId
+    const workspaceType = getWorkspaceType(item.workspaceType)
+    let conversationId = item.conversationId || (workspaceType === 'hand-poster' ? state.activePosterConversationId : state.activeConversationId)
     if (!conversationId) {
-      await get().createConversation({ ratio: item.ratio, size: item.size || getDefaultImageSize(item.ratio), quality: item.quality }, { silent: true })
-      conversationId = get().activeConversationId
+      await get().createConversation(
+        { workspaceType, ratio: item.ratio, size: item.size || getDefaultImageSize(item.ratio), quality: item.quality },
+        { silent: true, workspaceType }
+      )
+      conversationId = workspaceType === 'hand-poster' ? get().activePosterConversationId : get().activeConversationId
     }
     if (!conversationId) return
 
@@ -642,6 +765,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const startedAt = Date.now()
     const input: GenerateImageInput = {
       conversationId,
+      workspaceType,
       prompt: item.prompt,
       model: item.model || conversation?.model || state.settings?.defaultModel || DEFAULT_MODEL,
       ratio: item.ratio,
@@ -660,7 +784,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       referenceImageIds: item.referenceImages.map((reference) => reference.id)
     }
 
-    set({ activeConversationId: conversationId, view: 'workspace', generationClockMs: startedAt })
+    set(workspaceType === 'hand-poster'
+      ? { activePosterConversationId: conversationId, view: 'poster', generationClockMs: startedAt }
+      : { activeConversationId: conversationId, view: 'workspace', generationClockMs: startedAt })
     startGenerationClock()
     const nextGenerationState = beginConversationGeneration(conversationId, {
       generatingByConversation: get().generatingByConversation,
@@ -679,7 +805,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       void get().refreshConversationResults(conversationId)
       const result = await resultPromise
       const runs = await window.canvasForge.conversation.runs(conversationId)
-      const history = await window.canvasForge.history.list({ query: state.query, sort: state.sort, favoritesOnly: state.favoritesOnly })
+      const history = await window.canvasForge.history.list({
+        query: state.query,
+        sort: state.sort,
+        favoritesOnly: state.favoritesOnly,
+        workspaceType: state.historyWorkspaceType
+      })
       set({ runsByConversation: { ...get().runsByConversation, [conversationId]: runs }, history })
       const durationText = result.run.durationMs != null ? `，用时 ${formatDuration(result.run.durationMs)}` : ''
       get().notify(result.errorMessage ? `重试失败：${result.errorMessage}${durationText}` : `重试完成${durationText}`)
@@ -722,13 +853,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().notify(favorite ? `已收藏 ${items.length} 项` : `已取消收藏 ${items.length} 项`)
   },
   reuseHistory: async (item) => {
-    let id = item.conversationId || get().activeConversationId
+    const workspaceType = getWorkspaceType(item.workspaceType)
+    let id = item.conversationId || (workspaceType === 'hand-poster' ? get().activePosterConversationId : get().activeConversationId)
     if (!id) {
-      await get().createConversation()
-      id = get().activeConversationId
+      await get().createConversation({ workspaceType }, { silent: true, workspaceType })
+      id = workspaceType === 'hand-poster' ? get().activePosterConversationId : get().activeConversationId
     }
     if (!id) return
     await window.canvasForge.conversation.update(id, {
+      workspaceType,
       draftPrompt: item.prompt,
       model: item.model,
       ratio: item.ratio,
@@ -737,7 +870,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
     const conversations = await window.canvasForge.conversation.list()
     const runs = await window.canvasForge.conversation.runs(id)
-    set({ conversations, activeConversationId: id, runsByConversation: { ...get().runsByConversation, [id]: runs }, view: 'workspace' })
+    set(workspaceType === 'hand-poster'
+      ? { conversations, activePosterConversationId: id, runsByConversation: { ...get().runsByConversation, [id]: runs }, view: 'poster' }
+      : { conversations, activeConversationId: id, runsByConversation: { ...get().runsByConversation, [id]: runs }, view: 'workspace' })
     get().notify('已回填到当前会话')
   },
   notify: (message) => {

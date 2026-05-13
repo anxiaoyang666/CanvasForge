@@ -1,6 +1,7 @@
 import { useState, type CSSProperties, type JSX, type PointerEvent as ReactPointerEvent } from 'react'
 import { useAppStore } from '@renderer/store/app-store'
 import { GalleryPage } from '@renderer/components/gallery/GalleryPage'
+import { HandPosterPage } from '@renderer/components/hand-poster/HandPosterPage'
 import { PromptLibraryPage } from '@renderer/components/prompt-library/PromptLibraryPage'
 import { SettingsPanel } from '@renderer/components/settings/SettingsPanel'
 import { Sidebar } from '@renderer/components/sidebar/Sidebar'
@@ -18,6 +19,7 @@ export function MainLayout({
   const { view, settingsVisible } = useAppStore()
   const isWorkspaceView = view === 'workspace'
   const isLibraryView = view === 'gallery' || view === 'prompts'
+  const hasSidebar = view === 'workspace' || view === 'poster'
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = Number(window.localStorage.getItem('canvasforge-sidebar-width'))
     return Number.isFinite(saved) && saved >= 180 && saved <= 380 ? saved : 244
@@ -42,13 +44,19 @@ export function MainLayout({
 
   return (
     <main
-      className={`main ${settingsVisible && isWorkspaceView ? '' : 'settings-hidden'} ${isLibraryView ? 'gallery-mode' : ''}`}
+      className={`main ${settingsVisible && isWorkspaceView ? '' : 'settings-hidden'} ${isLibraryView ? 'gallery-mode' : ''} ${view === 'poster' ? 'poster-mode' : ''}`}
       style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties}
     >
-      <Sidebar />
-      <div className="sidebar-resizer" onPointerDown={startSidebarResize} title="拖动调整会话区宽度" />
+      {hasSidebar ? <Sidebar /> : null}
+      {hasSidebar ? <div className="sidebar-resizer" onPointerDown={startSidebarResize} title="拖动调整会话区宽度" /> : null}
       {view === 'gallery' ? (
         <GalleryPage />
+      ) : view === 'poster' ? (
+        <HandPosterPage
+          activeConversationGenerating={activeConversationGenerating}
+          activeConversationStartedAt={activeConversationStartedAt}
+          generationClockMs={generationClockMs}
+        />
       ) : view === 'prompts' ? (
         <PromptLibraryPage />
       ) : (

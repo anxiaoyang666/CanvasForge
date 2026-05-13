@@ -1,11 +1,26 @@
-import type { JSX } from 'react'
-import { BookOpen, Image as ImageIcon, PanelRightClose, PanelRightOpen, PencilLine, Plus } from 'lucide-react'
+import { useState, type JSX } from 'react'
+import { BookOpen, FilePenLine, Image as ImageIcon, PencilLine, Plug, Plus } from 'lucide-react'
 import { useAppStore } from '@renderer/store/app-store'
+import { ApiSettingsModal } from '@renderer/components/settings/ApiSettingsModal'
 import logoMark from '@renderer/assets/logo-mark.svg'
 
 export function Topbar(): JSX.Element {
-  const { settings, settingsVisible, view, setView, toggleSettings, createConversation } = useAppStore()
+  const { settings, view, setView, createConversation } = useAppStore()
+  const [apiSettingsVisible, setApiSettingsVisible] = useState(false)
   const endpoint = `${settings?.baseURL || 'https://api.openai.com'}/v1/images/generations`
+  const createCurrentConversation = () => {
+    if (view === 'poster') {
+      void createConversation({
+        workspaceType: 'hand-poster',
+        ratio: '4:3',
+        size: '2048x1536',
+        outputFormat: 'png',
+        background: 'opaque'
+      }, { workspaceType: 'hand-poster' })
+      return
+    }
+    void createConversation()
+  }
 
   return (
     <header className="topbar">
@@ -28,6 +43,10 @@ export function Topbar(): JSX.Element {
           <PencilLine size={16} />
           画布
         </button>
+        <button className={view === 'poster' ? 'active-soft' : ''} onClick={() => setView('poster')}>
+          <FilePenLine size={16} />
+          手抄报
+        </button>
         <button className={view === 'gallery' ? 'active-soft' : ''} onClick={() => setView('gallery')}>
           <ImageIcon size={16} />
           图库
@@ -36,15 +55,16 @@ export function Topbar(): JSX.Element {
           <BookOpen size={16} />
           提示词库
         </button>
-        <button onClick={toggleSettings} title={settingsVisible ? '收起参数区' : '展开参数区'}>
-          {settingsVisible ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
-          参数
+        <button onClick={() => setApiSettingsVisible(true)} title="API 设置">
+          <Plug size={16} />
+          API
         </button>
-        <button className="primary" onClick={() => void createConversation()}>
+        <button className="primary" onClick={createCurrentConversation}>
           <Plus size={16} />
           新建会话
         </button>
       </nav>
+      {apiSettingsVisible ? <ApiSettingsModal onClose={() => setApiSettingsVisible(false)} /> : null}
     </header>
   )
 }

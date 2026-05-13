@@ -7,6 +7,7 @@ export type ImageInputFidelity = 'low' | 'high'
 export type ImageStatus = 'succeeded' | 'failed'
 export type GenerationRunStatus = 'running' | ImageStatus
 export type GenerationMode = 'text-to-image' | 'image-to-image'
+export type WorkspaceType = 'canvas' | 'hand-poster'
 export type GenerationRunRetryFailure = {
   errorMessage: string
   errorDetails: string
@@ -30,6 +31,7 @@ export type ReferenceImageImportFile = {
 
 export type GenerateImageInput = {
   conversationId: string
+  workspaceType?: WorkspaceType
   prompt: string
   model: string
   ratio: ImageRatio
@@ -55,6 +57,7 @@ export type PromptAssistInput = {
 
 export type Conversation = {
   id: string
+  workspaceType?: WorkspaceType
   title: string
   draftPrompt: string
   model: string
@@ -82,6 +85,7 @@ export type ConversationUpdate = Partial<
   Pick<
     Conversation,
     | 'title'
+    | 'workspaceType'
     | 'draftPrompt'
     | 'model'
     | 'ratio'
@@ -106,6 +110,7 @@ export type ConversationCreateInput = Partial<
   Pick<
     Conversation,
     | 'model'
+    | 'workspaceType'
     | 'ratio'
     | 'size'
     | 'quality'
@@ -126,6 +131,7 @@ export type ConversationCreateInput = Partial<
 
 export type ImageHistoryItem = {
   id: string
+  workspaceType?: WorkspaceType
   conversationId: string | null
   runId: string | null
   prompt: string
@@ -149,6 +155,7 @@ export type ImageHistoryItem = {
 
 export type GenerationRun = {
   id: string
+  workspaceType?: WorkspaceType
   conversationId: string
   prompt: string
   model: string
@@ -184,6 +191,16 @@ export type ProviderSettingsUpdate = {
   promptModel?: string
 }
 
+export type ProviderModel = {
+  id: string
+  label: string
+}
+
+export type ProviderModelsInput = {
+  baseURL?: string
+  apiKey?: string
+}
+
 export type GenerateImageResult = {
   run: GenerationRun
   items: ImageHistoryItem[]
@@ -202,12 +219,14 @@ export type HistoryListOptions = {
   query?: string
   sort?: 'newest' | 'oldest'
   favoritesOnly?: boolean
+  workspaceType?: 'all' | WorkspaceType
 }
 
 export type CanvasForgeAPI = {
   settings: {
     get: () => Promise<ProviderSettings>
     update: (input: ProviderSettingsUpdate) => Promise<ProviderSettings>
+    models: (input?: ProviderModelsInput) => Promise<ProviderModel[]>
   }
   conversation: {
     list: () => Promise<Conversation[]>

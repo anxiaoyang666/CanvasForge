@@ -11,6 +11,8 @@ import type {
   ConversationUpdate,
   GenerateImageInput,
   HistoryListOptions,
+  ProviderModel,
+  ProviderModelsInput,
   PromptAssistInput,
   ProviderSettingsUpdate,
   ReferenceImageImportFile
@@ -110,6 +112,10 @@ async function handleApi(
     }
     if (method === 'PUT' && pathname === '/api/settings') {
       sendJson(response, 200, context.settings.update(await readJson<ProviderSettingsUpdate>(request)))
+      return
+    }
+    if (method === 'POST' && pathname === '/api/settings/models') {
+      sendJson(response, 200, await listProviderModels(context.settings, await readJson<ProviderModelsInput>(request, {})))
       return
     }
 
@@ -221,7 +227,45 @@ function readHistoryOptions(requestUrl: URL): HistoryListOptions {
   if (query) options.query = query
   if (sort === 'newest' || sort === 'oldest') options.sort = sort
   if (favoritesOnly === 'true') options.favoritesOnly = true
+  const workspaceType = requestUrl.searchParams.get('workspaceType')
+  if (workspaceType === 'canvas' || workspaceType === 'hand-poster' || workspaceType === 'all') {
+    options.workspaceType = workspaceType
+  }
   return options
+}
+
+async function listProviderModels(settings: SettingsStore, input: ProviderModelsInput = {}): Promise<ProviderModel[]> {
+  const publicSettings = settings.getPublicSettings()
+  const baseURL = (input.baseURL || publicSettings.baseURL).trim().replace(/\/+$/, '')
+  const apiKey = input.apiKey?.trim() || settings.getApiKey()
+  if (!apiKey) throw new Error('API key is not configured.')
+  const response = await fetch(`${baseURL}/v1/models`, {
+    headers: { Authorization: `Bearer ${apiKey}` }
+  })
+  const text = await response.text()
+  const payload = parseModelsPayload(text)
+  if (!response.ok) {
+    throw new Error(payload.error?.message || `Models request failed with HTTP ${response.status}.`)
+  }
+  return (payload.data || [])
+    .map((model) => {
+      const id = typeof model.id === 'string' ? model.id.trim() : ''
+      return id ? { id, label: id } : null
+    })
+    .filter((model): model is ProviderModel => Boolean(model))
+    .sort((left, right) => left.id.localeCompare(right.id))
+}
+
+function parseModelsPayload(text: string): {
+  data?: Array<{ id?: unknown }>
+  error?: { message?: string }
+} {
+  if (!text.trim()) return {}
+  try {
+    return JSON.parse(text) as { data?: Array<{ id?: unknown }>; error?: { message?: string } }
+  } catch {
+    return {}
+  }
 }
 
 function serveDatabaseImage(response: ServerResponse, database: AppDatabase, pathname: string): void {

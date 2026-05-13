@@ -22,7 +22,8 @@ import type {
   ImageHistoryItem,
   ImageRatio,
   ImageStatus,
-  ReferenceImage
+  ReferenceImage,
+  WorkspaceType
 } from '@shared/types'
 import { createInterruptedRunRecoveryPlan } from './interrupted-run-recovery'
 
@@ -72,6 +73,7 @@ export class AppDatabase {
     const ratio = input.ratio || '1:1'
     const conversation: Conversation = {
       id: randomUUID(),
+      workspaceType: input.workspaceType === 'hand-poster' ? 'hand-poster' : 'canvas',
       title: '新会话',
       draftPrompt: '',
       model: input.model || DEFAULT_MODEL,
@@ -97,11 +99,12 @@ export class AppDatabase {
     this.db
       .prepare(
         `insert into conversations
-        (id, title, draft_prompt, model, ratio, size, quality, n, output_format, output_compression, background, moderation, stream, partial_images, input_fidelity, max_retries, generation_timeout_seconds, auto_save_history, keep_failure_details, created_at, updated_at)
-        values (@id, @title, @draftPrompt, @model, @ratio, @size, @quality, @n, @outputFormat, @outputCompression, @background, @moderation, @stream, @partialImages, @inputFidelity, @maxRetries, @generationTimeoutSeconds, @autoSaveHistory, @keepFailureDetails, @createdAt, @updatedAt)`
+        (id, workspace_type, title, draft_prompt, model, ratio, size, quality, n, output_format, output_compression, background, moderation, stream, partial_images, input_fidelity, max_retries, generation_timeout_seconds, auto_save_history, keep_failure_details, created_at, updated_at)
+        values (@id, @workspaceType, @title, @draftPrompt, @model, @ratio, @size, @quality, @n, @outputFormat, @outputCompression, @background, @moderation, @stream, @partialImages, @inputFidelity, @maxRetries, @generationTimeoutSeconds, @autoSaveHistory, @keepFailureDetails, @createdAt, @updatedAt)`
       )
       .run({
         ...conversation,
+        workspaceType: conversation.workspaceType,
         outputCompression: conversation.outputCompression,
         stream: conversation.stream ? 1 : 0,
         autoSaveHistory: conversation.autoSaveHistory ? 1 : 0,
@@ -116,6 +119,7 @@ export class AppDatabase {
     const next: Conversation = {
       ...current,
       ...input,
+      workspaceType: input.workspaceType === 'hand-poster' ? 'hand-poster' : current.workspaceType,
       size: input.size ?? (input.ratio !== undefined ? getDefaultImageSize(input.ratio) : current.size),
       n: input.n !== undefined ? Math.min(10, Math.max(1, input.n)) : current.n,
       outputFormat: input.outputFormat ?? current.outputFormat,
@@ -135,6 +139,7 @@ export class AppDatabase {
     this.db
       .prepare(
         `update conversations set
+        workspace_type = @workspaceType,
         title = @title,
         draft_prompt = @draftPrompt,
         model = @model,
@@ -158,6 +163,7 @@ export class AppDatabase {
       )
       .run({
         ...next,
+        workspaceType: next.workspaceType,
         stream: next.stream ? 1 : 0,
         autoSaveHistory: next.autoSaveHistory ? 1 : 0,
         keepFailureDetails: next.keepFailureDetails ? 1 : 0
@@ -166,20 +172,31 @@ export class AppDatabase {
   }
 
   deleteConversation(id: string): void {
-    this.db.prepare('update image_history set conversation_id = null where conversation_id = ?').run(id)
-    this.db.prepare('delete from generation_runs where conversation_id = ?').run(id)
-    this.db.prepare('delete from conversations where id = ?').run(id)
+    const runIds = this.db
+      .prepare('select id from generation_runs where conversation_id = ?')
+      .all(id)
+      .map((row) => String((row as Row).id))
+    const transaction = this.db.transaction(() => {
+      this.db.prepare('delete from conversation_reference_images where conversation_id = ?').run(id)
+      const deleteRunReferences = this.db.prepare('delete from generation_run_references where run_id = ?')
+      for (const runId of runIds) deleteRunReferences.run(runId)
+      this.db.prepare('update image_history set conversation_id = null, run_id = null where conversation_id = ?').run(id)
+      this.db.prepare('delete from generation_runs where conversation_id = ?').run(id)
+      this.db.prepare('delete from conversations where id = ?').run(id)
+    })
+    transaction()
   }
 
   insertRun(input: Omit<GenerationRun, 'items' | 'referenceImages'> & { referenceImages?: ReferenceImage[] }): GenerationRun {
     this.db
       .prepare(
         `insert into generation_runs
-        (id, conversation_id, prompt, model, ratio, size, quality, duration_ms, n, status, error_message, error_details, max_retries, retry_attempts, retry_failures, generation_mode, created_at)
-        values (@id, @conversationId, @prompt, @model, @ratio, @size, @quality, @durationMs, @n, @status, @errorMessage, @errorDetails, @maxRetries, @retryAttempts, @retryFailures, @generationMode, @createdAt)`
+        (id, workspace_type, conversation_id, prompt, model, ratio, size, quality, duration_ms, n, status, error_message, error_details, max_retries, retry_attempts, retry_failures, generation_mode, created_at)
+        values (@id, @workspaceType, @conversationId, @prompt, @model, @ratio, @size, @quality, @durationMs, @n, @status, @errorMessage, @errorDetails, @maxRetries, @retryAttempts, @retryFailures, @generationMode, @createdAt)`
       )
       .run({
         ...input,
+        workspaceType: input.workspaceType || this.getConversation(input.conversationId)?.workspaceType || 'canvas',
         maxRetries: normalizeRetryCount(input.maxRetries),
         retryAttempts: JSON.stringify(input.retryAttempts || {}),
         retryFailures: JSON.stringify(input.retryFailures || {}),
@@ -187,6 +204,7 @@ export class AppDatabase {
       })
     return {
       ...input,
+      workspaceType: input.workspaceType || this.getConversation(input.conversationId)?.workspaceType || 'canvas',
       maxRetries: normalizeRetryCount(input.maxRetries),
       retryAttempts: input.retryAttempts || {},
       retryFailures: input.retryFailures || {},
@@ -267,11 +285,12 @@ export class AppDatabase {
     this.db
       .prepare(
         `insert into image_history
-        (id, conversation_id, run_id, prompt, model, ratio, size, quality, request_index, duration_ms, file_path, file_size_bytes, status, error_message, error_details, retry_attempt, favorite, global_visible, generation_mode, created_at)
-        values (@id, @conversationId, @runId, @prompt, @model, @ratio, @size, @quality, @requestIndex, @durationMs, @filePath, @fileSizeBytes, @status, @errorMessage, @errorDetails, @retryAttempt, @favorite, @globalVisible, @generationMode, @createdAt)`
+        (id, workspace_type, conversation_id, run_id, prompt, model, ratio, size, quality, request_index, duration_ms, file_path, file_size_bytes, status, error_message, error_details, retry_attempt, favorite, global_visible, generation_mode, created_at)
+        values (@id, @workspaceType, @conversationId, @runId, @prompt, @model, @ratio, @size, @quality, @requestIndex, @durationMs, @filePath, @fileSizeBytes, @status, @errorMessage, @errorDetails, @retryAttempt, @favorite, @globalVisible, @generationMode, @createdAt)`
       )
       .run({
         ...item,
+        workspaceType: item.workspaceType || this.getConversation(input.conversationId || '')?.workspaceType || 'canvas',
         retryAttempt: Math.max(0, Math.trunc(item.retryAttempt || 0)),
         favorite: item.favorite ? 1 : 0,
         globalVisible: input.globalVisible === false ? 0 : 1,
@@ -288,6 +307,10 @@ export class AppDatabase {
       params.query = `%${options.query.trim()}%`
     }
     if (options.favoritesOnly) where.push('favorite = 1')
+    if (options.workspaceType && options.workspaceType !== 'all') {
+      where.push('workspace_type = @workspaceType')
+      params.workspaceType = options.workspaceType
+    }
     const order = options.sort === 'oldest' ? 'asc' : 'desc'
     const sql = `select * from image_history ${where.length ? `where ${where.join(' and ')}` : ''} order by created_at ${order}`
     return this.db.prepare(sql).all(params).map((row) => this.historyFromRow(row as Row))
@@ -439,6 +462,7 @@ export class AppDatabase {
     this.db.exec(`
       create table if not exists conversations (
         id text primary key,
+        workspace_type text not null default 'canvas',
         title text not null,
         draft_prompt text not null,
         model text not null,
@@ -463,6 +487,7 @@ export class AppDatabase {
 
       create table if not exists generation_runs (
         id text primary key,
+        workspace_type text not null default 'canvas',
         conversation_id text not null,
         prompt text not null,
         model text not null,
@@ -484,6 +509,7 @@ export class AppDatabase {
 
       create table if not exists image_history (
         id text primary key,
+        workspace_type text not null default 'canvas',
         conversation_id text,
         run_id text,
         prompt text not null,
@@ -534,6 +560,9 @@ export class AppDatabase {
       );
     `)
     const conversationColumns = this.db.prepare('pragma table_info(conversations)').all() as Array<{ name: string }>
+    if (!conversationColumns.some((column) => column.name === 'workspace_type')) {
+      this.db.exec("alter table conversations add column workspace_type text not null default 'canvas'")
+    }
     if (!conversationColumns.some((column) => column.name === 'size')) {
       this.db.exec('alter table conversations add column size text')
     }
@@ -565,6 +594,9 @@ export class AppDatabase {
       this.db.exec('alter table conversations add column generation_timeout_seconds integer not null default 300')
     }
     const columns = this.db.prepare('pragma table_info(image_history)').all() as Array<{ name: string }>
+    if (!columns.some((column) => column.name === 'workspace_type')) {
+      this.db.exec("alter table image_history add column workspace_type text not null default 'canvas'")
+    }
     if (!columns.some((column) => column.name === 'global_visible')) {
       this.db.exec('alter table image_history add column global_visible integer not null default 1')
     }
@@ -584,6 +616,9 @@ export class AppDatabase {
       this.db.exec('alter table image_history add column retry_attempt integer not null default 0')
     }
     const runColumns = this.db.prepare('pragma table_info(generation_runs)').all() as Array<{ name: string }>
+    if (!runColumns.some((column) => column.name === 'workspace_type')) {
+      this.db.exec("alter table generation_runs add column workspace_type text not null default 'canvas'")
+    }
     if (!runColumns.some((column) => column.name === 'duration_ms')) {
       this.db.exec('alter table generation_runs add column duration_ms integer')
     }
@@ -604,6 +639,7 @@ export class AppDatabase {
   private conversationFromRow(row: Row): Conversation {
     return {
       id: String(row.id),
+      workspaceType: parseWorkspaceType(row.workspace_type),
       title: String(row.title),
       draftPrompt: String(row.draft_prompt),
       model: String(row.model),
@@ -632,6 +668,7 @@ export class AppDatabase {
 
   private runFromRow = (row: Row): GenerationRun => ({
     id: String(row.id),
+    workspaceType: parseWorkspaceType(row.workspace_type),
     conversationId: String(row.conversation_id),
     prompt: String(row.prompt),
     model: String(row.model),
@@ -674,11 +711,12 @@ export class AppDatabase {
         this.db
           .prepare(
             `insert into image_history
-            (id, conversation_id, run_id, prompt, model, ratio, size, quality, request_index, duration_ms, file_path, file_size_bytes, status, error_message, error_details, retry_attempt, favorite, global_visible, generation_mode, created_at)
-            values (@id, @conversationId, @runId, @prompt, @model, @ratio, @size, @quality, @requestIndex, @durationMs, @filePath, @fileSizeBytes, @status, @errorMessage, @errorDetails, @retryAttempt, @favorite, @globalVisible, @generationMode, @createdAt)`
+            (id, workspace_type, conversation_id, run_id, prompt, model, ratio, size, quality, request_index, duration_ms, file_path, file_size_bytes, status, error_message, error_details, retry_attempt, favorite, global_visible, generation_mode, created_at)
+            values (@id, @workspaceType, @conversationId, @runId, @prompt, @model, @ratio, @size, @quality, @requestIndex, @durationMs, @filePath, @fileSizeBytes, @status, @errorMessage, @errorDetails, @retryAttempt, @favorite, @globalVisible, @generationMode, @createdAt)`
           )
           .run({
             id: randomUUID(),
+            workspaceType: run.workspaceType,
             conversationId: run.conversationId,
             runId: run.id,
             prompt: run.prompt,
@@ -712,6 +750,7 @@ export class AppDatabase {
 
   private historyFromRow = (row: Row): ImageHistoryItem => ({
     id: String(row.id),
+    workspaceType: parseWorkspaceType(row.workspace_type),
     conversationId: row.conversation_id ? String(row.conversation_id) : null,
     runId: row.run_id ? String(row.run_id) : null,
     prompt: String(row.prompt),
@@ -841,6 +880,10 @@ function mimeTypeFromExtension(extension: string): string {
 function normalizeRetryCount(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_IMAGE_MAX_RETRIES
   return Math.min(MAX_IMAGE_MAX_RETRIES, Math.max(0, Math.trunc(value)))
+}
+
+function parseWorkspaceType(value: unknown): WorkspaceType {
+  return value === 'hand-poster' ? 'hand-poster' : 'canvas'
 }
 
 function parseRetryAttempts(value: unknown): Record<number, number> {

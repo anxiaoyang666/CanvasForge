@@ -9,6 +9,8 @@ describe('app store conversation defaults', () => {
     useAppStore.setState({
       conversations: [],
       activeConversationId: null,
+      activePosterConversationId: null,
+      view: 'workspace',
       runsByConversation: {},
       toast: null
     })
@@ -145,6 +147,167 @@ describe('app store conversation defaults', () => {
     expect(runs).toHaveBeenCalledWith(active.id)
     expect(historyList).toHaveBeenCalled()
   })
+
+  it('retries a failed hand-poster image inside the hand-poster workspace', async () => {
+    const poster = createConversation({ id: 'p1', workspaceType: 'hand-poster', ratio: '3:4', size: '1536x2048', outputFormat: 'png' })
+    const failed = createHistoryItem({
+      id: 'h-poster',
+      workspaceType: 'hand-poster',
+      conversationId: poster.id,
+      prompt: '手抄报失败提示词',
+      ratio: '3:4',
+      size: '1536x2048'
+    })
+    const generate = vi.fn(() => Promise.resolve({
+      run: { id: 'r-poster', durationMs: 123 },
+      items: []
+    }))
+    const runs = vi.fn(() => Promise.resolve([]))
+    const historyList = vi.fn(() => Promise.resolve([]))
+    installWindow({ generate, runs, historyList })
+    useAppStore.setState({
+      conversations: [poster],
+      activeConversationId: null,
+      activePosterConversationId: poster.id,
+      settings: { baseURL: 'https://api.openai.com', apiKeyStored: true, defaultModel: 'gpt-image-2', promptModel: 'gpt-5.4', insecureStorage: false },
+      history: [failed],
+      runsByConversation: { [poster.id]: [] },
+      generatingByConversation: {},
+      generationStartedAtByConversation: {},
+      removedGenerationIndexesByRunId: {},
+      query: '',
+      sort: 'newest',
+      favoritesOnly: false,
+      toast: null
+    })
+
+    await useAppStore.getState().retryFailedImage(failed)
+
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({
+      conversationId: poster.id,
+      workspaceType: 'hand-poster',
+      prompt: '手抄报失败提示词',
+      ratio: '3:4',
+      size: '1536x2048'
+    }))
+    expect(useAppStore.getState()).toMatchObject({
+      activePosterConversationId: poster.id,
+      view: 'poster'
+    })
+  })
+
+  it('keeps one fresh hand-poster session after deleting the last hand-poster session', async () => {
+    const canvas = createConversation({ id: 'c1', workspaceType: 'canvas' })
+    const poster = createConversation({ id: 'p1', workspaceType: 'hand-poster', ratio: '3:4', size: '1536x2048' })
+    const replacement = createConversation({ id: 'p2', workspaceType: 'hand-poster', ratio: '4:3', size: '2048x1536', background: 'opaque' })
+    const deleteFn = vi.fn(() => Promise.resolve())
+    const create = vi.fn(() => Promise.resolve(replacement))
+    installWindow({ create, delete: deleteFn })
+    useAppStore.setState({
+      conversations: [poster, canvas],
+      activeConversationId: canvas.id,
+      activePosterConversationId: poster.id,
+      runsByConversation: { [poster.id]: [], [canvas.id]: [] },
+      toast: null
+    })
+
+    await useAppStore.getState().deleteConversation(poster.id)
+
+    expect(deleteFn).toHaveBeenCalledWith(poster.id)
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceType: 'hand-poster',
+      ratio: '4:3',
+      size: '2048x1536',
+      outputFormat: 'png',
+      background: 'opaque'
+    }))
+    expect(useAppStore.getState()).toMatchObject({
+      activeConversationId: canvas.id,
+      activePosterConversationId: replacement.id
+    })
+    expect(useAppStore.getState().conversations.some((conversation) => conversation.id === replacement.id)).toBe(true)
+    expect(useAppStore.getState().conversations.some((conversation) => conversation.id === poster.id)).toBe(false)
+  })
+
+  it('deletes the selected session when multiple hand-poster sessions exist', async () => {
+    const first = createConversation({ id: 'p1', workspaceType: 'hand-poster' })
+    const second = createConversation({ id: 'p2', workspaceType: 'hand-poster' })
+    const deleteFn = vi.fn(() => Promise.resolve())
+    installWindow({ delete: deleteFn })
+    useAppStore.setState({
+      conversations: [first, second],
+      activePosterConversationId: first.id,
+      runsByConversation: { [first.id]: [], [second.id]: [] },
+      toast: null
+    })
+
+    await useAppStore.getState().deleteConversation(first.id)
+
+    expect(deleteFn).toHaveBeenCalledWith(first.id)
+    expect(useAppStore.getState().activePosterConversationId).toBe(second.id)
+    expect(useAppStore.getState().conversations.map((conversation) => conversation.id)).toEqual([second.id])
+    expect(useAppStore.getState().runsByConversation[first.id]).toBeUndefined()
+  })
+
+  it('blocks deleting a session while a local generation is still pending', async () => {
+    const active = createConversation({ id: 'c1' })
+    const deleteFn = vi.fn(() => Promise.resolve())
+    installWindow({ delete: deleteFn })
+    useAppStore.setState({
+      conversations: [active],
+      activeConversationId: active.id,
+      generatingByConversation: { [active.id]: 1 },
+      runsByConversation: { [active.id]: [] },
+      toast: null
+    })
+
+    await useAppStore.getState().deleteConversation(active.id)
+
+    expect(deleteFn).not.toHaveBeenCalled()
+    expect(useAppStore.getState().conversations).toEqual([active])
+    expect(useAppStore.getState().toast).toBe('请先取消生成任务')
+  })
+
+  it('blocks deleting a session with running persisted runs', async () => {
+    const active = createConversation({ id: 'c1' })
+    const deleteFn = vi.fn(() => Promise.resolve())
+    installWindow({ delete: deleteFn })
+    useAppStore.setState({
+      conversations: [active],
+      activeConversationId: active.id,
+      generatingByConversation: {},
+      runsByConversation: {
+        [active.id]: [{
+          id: 'run-1',
+          conversationId: active.id,
+          prompt: 'prompt',
+          model: 'gpt-image-2',
+          ratio: '1:1',
+          size: '1024x1024',
+          quality: 'auto',
+          n: 1,
+          status: 'running',
+          durationMs: null,
+          errorMessage: null,
+          errorDetails: null,
+          maxRetries: 0,
+          retryAttempts: {},
+          retryFailures: {},
+          generationMode: 'text-to-image',
+          referenceImages: [],
+          createdAt: '2026-05-13T00:00:00.000Z',
+          items: []
+        }]
+      },
+      toast: null
+    })
+
+    await useAppStore.getState().deleteConversation(active.id)
+
+    expect(deleteFn).not.toHaveBeenCalled()
+    expect(useAppStore.getState().conversations).toEqual([active])
+    expect(useAppStore.getState().toast).toBe('请先取消生成任务')
+  })
 })
 
 function installWindow(conversation: {
@@ -153,6 +316,7 @@ function installWindow(conversation: {
   generate?: ReturnType<typeof vi.fn>
   runs?: ReturnType<typeof vi.fn>
   historyList?: ReturnType<typeof vi.fn>
+  delete?: ReturnType<typeof vi.fn>
 }): void {
   Object.defineProperty(globalThis, 'window', {
     value: {
@@ -162,7 +326,8 @@ function installWindow(conversation: {
       canvasForge: {
         conversation: {
           ...conversation,
-          runs: conversation.runs
+          runs: conversation.runs,
+          delete: conversation.delete
         },
         image: {
           generate: conversation.generate

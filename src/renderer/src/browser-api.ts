@@ -6,6 +6,7 @@ import type {
   HistoryListOptions,
   CanvasForgeAPI,
   PromptAssistInput,
+  ProviderModelsInput,
   ProviderSettingsUpdate,
   ReferenceImageImportFile
 } from '@shared/types'
@@ -21,7 +22,8 @@ function createBrowserCanvasForgeAPI(): CanvasForgeAPI {
   return {
     settings: {
       get: () => request('/api/settings'),
-      update: (input: ProviderSettingsUpdate) => request('/api/settings', { method: 'PUT', body: input as JsonValue })
+      update: (input: ProviderSettingsUpdate) => request('/api/settings', { method: 'PUT', body: input as JsonValue }),
+      models: (input?: ProviderModelsInput) => request('/api/settings/models', { method: 'POST', body: (input || {}) as JsonValue })
     },
     conversation: {
       list: () => request('/api/conversations'),
@@ -92,6 +94,7 @@ function createBrowserCanvasForgeAPI(): CanvasForgeAPI {
         if (options?.query) params.set('query', options.query)
         if (options?.sort) params.set('sort', options.sort)
         if (options?.favoritesOnly) params.set('favoritesOnly', 'true')
+        if (options?.workspaceType) params.set('workspaceType', options.workspaceType)
         const query = params.toString()
         return request(`/api/history${query ? `?${query}` : ''}`)
       },

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, type JSX } from 'react'
 import { CheckSquare, Download, Heart, RotateCcw, Search, Square, Star, Trash2 } from 'lucide-react'
-import type { ImageHistoryItem, ImageQuality, ImageRatio, ImageStatus } from '@shared/types'
+import type { ImageHistoryItem, ImageQuality, ImageRatio, ImageStatus, WorkspaceType } from '@shared/types'
 import { IMAGE_QUALITIES, IMAGE_RATIOS, formatImageQuality } from '@shared/image-options'
 import { useAppStore } from '@renderer/store/app-store'
+import { orderHandPosterDerivatives } from '@renderer/hand-poster-history'
 import { ImageTile } from '@renderer/components/workspace/ImageTile'
 import { GallerySelect, type GallerySelectOption } from './GallerySelect'
 
@@ -23,6 +24,11 @@ const statusOptions: Array<GallerySelectOption<GalleryStatusFilter>> = [
   { value: 'all', label: '状态' },
   { value: 'succeeded', label: '成功' },
   { value: 'failed', label: '失败' }
+]
+const workspaceFilterOptions: Array<GallerySelectOption<'all' | WorkspaceType>> = [
+  { value: 'all', label: '全部来源' },
+  { value: 'canvas', label: '画布' },
+  { value: 'hand-poster', label: '手抄报' }
 ]
 
 const sortOptions: Array<GallerySelectOption<GallerySortMode>> = [
@@ -80,9 +86,11 @@ export function GalleryPage(): JSX.Element {
     history,
     query,
     favoritesOnly,
+    historyWorkspaceType,
     setQuery,
     reloadHistory,
     setFavoritesOnly,
+    setHistoryWorkspaceType,
     deleteHistoryItems,
     setFavoriteForHistoryItems,
     notify
@@ -171,7 +179,7 @@ export function GalleryPage(): JSX.Element {
         })
       case 'newest':
       default:
-        return items.sort(compareByTimeDesc)
+        return orderHandPosterDerivatives(items.sort(compareByTimeDesc), (item) => item)
     }
   }, [filteredHistory, sortMode])
   const pageCount = Math.max(1, Math.ceil(sortedHistory.length / pageSize))
@@ -191,7 +199,7 @@ export function GalleryPage(): JSX.Element {
 
   useEffect(() => {
     setPage(1)
-  }, [favoritesOnly, modelFilter, qualityFilter, query, ratioFilter, statusFilter, sortMode])
+  }, [favoritesOnly, historyWorkspaceType, modelFilter, qualityFilter, query, ratioFilter, statusFilter, sortMode])
 
   useEffect(() => {
     setPage((current) => Math.min(current, pageCount))
@@ -224,6 +232,7 @@ export function GalleryPage(): JSX.Element {
     setRatioFilter('all')
     setQualityFilter('all')
     if (favoritesOnly) void setFavoritesOnly(false)
+    if (historyWorkspaceType !== 'all') void setHistoryWorkspaceType('all')
     if (query) {
       setQuery('')
       void reloadHistory({ query: '' })
@@ -266,6 +275,7 @@ export function GalleryPage(): JSX.Element {
           <Star size={15} />
           {favoritesOnly ? '全部历史' : '只看收藏'}
         </button>
+        <GallerySelect value={historyWorkspaceType} options={workspaceFilterOptions} ariaLabel="筛选来源" className="source-select" onChange={(value) => void setHistoryWorkspaceType(value)} />
         <GallerySelect value={statusFilter} options={statusOptions} ariaLabel="筛选状态" onChange={setStatusFilter} />
         <GallerySelect value={modelFilter} options={modelFilterOptions} ariaLabel="筛选模型" className="model-select" onChange={setModelFilter} />
         <GallerySelect value={ratioFilter} options={ratioFilterOptions} ariaLabel="筛选比例" onChange={setRatioFilter} />
@@ -319,6 +329,7 @@ export function GalleryPage(): JSX.Element {
               selectable
               selected={selectedIds.has(item.id)}
               showReuseAction
+              galleryMode
               onSelectedChange={(selected) => toggleSelected(item.id, selected)}
             />
           </div>
