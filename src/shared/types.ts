@@ -222,11 +222,87 @@ export type HistoryListOptions = {
   workspaceType?: 'all' | WorkspaceType
 }
 
+export type PromptTemplate = {
+  id: string
+  title: string
+  category: string
+  description: string
+  prompt: string
+  tags: string[]
+  ratio: ImageRatio
+  resolution: string
+  quality: ImageQuality
+}
+
+export type PromptTemplateInput = Omit<PromptTemplate, 'id'>
+
+export type AccessStatus = {
+  protectionEnabled: boolean
+  authenticated: boolean
+}
+
+export type AccessLoginInput = {
+  password: string
+}
+
+export type AccessPasswordUpdate = {
+  password: string | null
+}
+
+export type MaintenanceStatus = {
+  dataDir: string
+  counts: {
+    conversations: number
+    runs: number
+    history: number
+    succeededImages: number
+    failedItems: number
+    referenceImages: number
+    promptTemplates: number
+  }
+  storage: {
+    databaseBytes: number
+    imagesBytes: number
+    referenceImagesBytes: number
+    totalBytes: number
+  }
+  recentFailure: {
+    message: string
+    createdAt: string
+  } | null
+}
+
+export type BackupManifest = {
+  app: 'CanvasForge'
+  version: number
+  exportedAt: string
+  files: Array<{
+    path: string
+    contentBase64: string
+  }>
+}
+
+export type MaintenanceRestoreResult = {
+  ok: true
+  restarting: true
+}
+
 export type CanvasForgeAPI = {
+  access: {
+    status: () => Promise<AccessStatus>
+    login: (input: AccessLoginInput) => Promise<AccessStatus>
+    logout: () => Promise<AccessStatus>
+    updatePassword: (input: AccessPasswordUpdate) => Promise<AccessStatus>
+  }
   settings: {
     get: () => Promise<ProviderSettings>
     update: (input: ProviderSettingsUpdate) => Promise<ProviderSettings>
     models: (input?: ProviderModelsInput) => Promise<ProviderModel[]>
+  }
+  maintenance: {
+    status: () => Promise<MaintenanceStatus>
+    backupUrl: () => string
+    restore: (backup: BackupManifest) => Promise<MaintenanceRestoreResult>
   }
   conversation: {
     list: () => Promise<Conversation[]>
@@ -246,6 +322,13 @@ export type CanvasForgeAPI = {
   prompt: {
     inspire: (input?: PromptAssistInput) => Promise<string>
     enrich: (input: PromptAssistInput & { prompt: string }) => Promise<string>
+  }
+  promptLibrary: {
+    list: () => Promise<PromptTemplate[]>
+    create: (input: PromptTemplateInput) => Promise<PromptTemplate>
+    update: (id: string, input: PromptTemplateInput) => Promise<PromptTemplate>
+    delete: (id: string) => Promise<void>
+    importMany: (items: PromptTemplate[]) => Promise<PromptTemplate[]>
   }
   reference: {
     importFiles: (conversationId: string, files: ReferenceImageImportFile[]) => Promise<ReferenceImage[]>

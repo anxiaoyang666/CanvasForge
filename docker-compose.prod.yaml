@@ -1,0 +1,25 @@
+services:
+  canvasforge:
+    build:
+      context: .
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-docker.m.daocloud.io/library/node:22-bookworm-slim}
+        APT_MIRROR: ${APT_MIRROR:-http://mirrors.tuna.tsinghua.edu.cn/debian}
+        APT_SECURITY_MIRROR: ${APT_SECURITY_MIRROR:-http://mirrors.tuna.tsinghua.edu.cn/debian-security}
+    container_name: canvasforge
+    working_dir: /app
+    ports:
+      - "${CANVASFORGE_WEB_PORT:-3002}:3000"
+    environment:
+      TZ: Asia/Shanghai
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      CANVASFORGE_DATA_DIR: /app/data
+      CANVASFORGE_STATIC_DIR: /app/out/renderer
+      CANVASFORGE_MAX_JSON_BODY_BYTES: ${CANVASFORGE_MAX_JSON_BODY_BYTES:-29360128}
+    volumes:
+      - ./data:/app/data
+    command: sh -lc "corepack pnpm install --frozen-lockfile && corepack pnpm build && node out/server/index.mjs"
+    stop_grace_period: 20s
+    restart: unless-stopped

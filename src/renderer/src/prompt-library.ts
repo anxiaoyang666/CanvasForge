@@ -1,21 +1,8 @@
-import type { ImageQuality, ImageRatio } from '@shared/types'
+import type { ImageQuality, ImageRatio, PromptTemplate, PromptTemplateInput } from '@shared/types'
 import { getDefaultImageSize, getImageSizeOptions } from '@shared/image-options'
 
-export type PromptTemplate = {
-  id: string
-  title: string
-  category: string
-  description: string
-  prompt: string
-  tags: string[]
-  ratio: ImageRatio
-  resolution: string
-  quality: ImageQuality
-}
-
+export type { PromptTemplate, PromptTemplateInput }
 export type PromptLibraryItem = PromptTemplate
-
-export type PromptTemplateInput = Omit<PromptTemplate, 'id'>
 
 type LegacyPromptTemplateRecord = Partial<PromptTemplate> & {
   promptZh?: unknown
@@ -173,6 +160,7 @@ export const PROMPT_TEMPLATES: PromptTemplate[] = [
 ]
 
 const PROMPT_LIBRARY_STORAGE_KEY = 'canvasforge.prompt-library.items.v1'
+const PROMPT_LIBRARY_MIGRATED_KEY = 'canvasforge.prompt-library.server-migrated.v1'
 
 export type PromptTemplateFilterOptions = {
   query?: string
@@ -220,28 +208,32 @@ export function getPromptLibraryItems(): PromptLibraryItem[] {
   }
 }
 
-export function createPromptLibraryItem(input: PromptTemplateInput): PromptLibraryItem {
-  const template = normalizePromptTemplate(input, createPromptTemplateId())
-  if (!template) throw new Error('Invalid prompt template.')
-  const next = [template, ...getPromptLibraryItems().filter((entry) => entry.id !== template.id)]
-  savePromptLibraryItems(next)
-  return template
+export async function loadPromptLibraryItemsFromServer(): Promise<PromptLibraryItem[]> {
+  if (typeof window === 'undefined') return PROMPT_TEMPLATES
+  const remoteItems = await window.canvasForge.promptLibrary.list()
+  if (remoteItems.length > 0) {
+    markPromptLibraryMigrated()
+    return remoteItems
+  }
+  if (!hasPromptLibraryMigrated()) {
+    const legacyItems = getPromptLibraryItems()
+    const imported = await window.canvasForge.promptLibrary.importMany(legacyItems)
+    markPromptLibraryMigrated()
+    return imported
+  }
+  return remoteItems
 }
 
-export function updatePromptLibraryItem(id: string, input: PromptTemplateInput): PromptLibraryItem {
-  const items = getPromptLibraryItems()
-  const index = items.findIndex((item) => item.id === id)
-  if (index < 0) throw new Error('Prompt template not found.')
-  const updated = normalizePromptTemplate({ ...input, id }, id)
-  if (!updated) throw new Error('Invalid prompt template.')
-  const next = [...items]
-  next[index] = updated
-  savePromptLibraryItems(next)
-  return updated
+export async function createPromptLibraryItem(input: PromptTemplateInput): Promise<PromptLibraryItem> {
+  return window.canvasForge.promptLibrary.create(input)
 }
 
-export function deletePromptLibraryItem(id: string): void {
-  savePromptLibraryItems(getPromptLibraryItems().filter((item) => item.id !== id))
+export async function updatePromptLibraryItem(id: string, input: PromptTemplateInput): Promise<PromptLibraryItem> {
+  return window.canvasForge.promptLibrary.update(id, input)
+}
+
+export async function deletePromptLibraryItem(id: string): Promise<void> {
+  await window.canvasForge.promptLibrary.delete(id)
 }
 
 export function clonePromptTemplate(template: PromptTemplate): PromptTemplateInput {
@@ -260,6 +252,15 @@ export function clonePromptTemplate(template: PromptTemplate): PromptTemplateInp
 function savePromptLibraryItems(items: PromptTemplate[]): void {
   if (typeof window === 'undefined') return
   window.localStorage.setItem(PROMPT_LIBRARY_STORAGE_KEY, JSON.stringify(items))
+}
+
+function hasPromptLibraryMigrated(): boolean {
+  return typeof window !== 'undefined' && window.localStorage.getItem(PROMPT_LIBRARY_MIGRATED_KEY) === 'true'
+}
+
+function markPromptLibraryMigrated(): void {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(PROMPT_LIBRARY_MIGRATED_KEY, 'true')
 }
 
 function normalizePromptTemplate(input: unknown, id = createPromptTemplateId()): PromptTemplate | null {

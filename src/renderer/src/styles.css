@@ -196,6 +196,21 @@ button:disabled {
 
 .dark .endpoint code { color: #dbe8e1; }
 
+.top-metric {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 11px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.top-metric strong {
+  font-size: 12px;
+}
+
 .dot {
   width: 8px;
   height: 8px;
@@ -1424,6 +1439,16 @@ textarea {
   padding-top: 6px;
 }
 
+.settings-note {
+  padding: 10px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  background: var(--paper-soft);
+}
+
 .api-settings-modal {
   z-index: 80;
 }
@@ -1445,6 +1470,201 @@ textarea {
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
+}
+
+.access-loading,
+.access-gate {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.access-card {
+  width: min(420px, 100%);
+  display: grid;
+  gap: 18px;
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 22px 60px rgba(26, 46, 38, 0.14);
+}
+
+.dark .access-card {
+  background: rgba(18, 27, 23, 0.9);
+}
+
+.access-mark {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: rgba(30, 159, 120, 0.12);
+  color: var(--green);
+}
+
+.access-card h1 {
+  margin: 4px 0 6px;
+  font-size: 24px;
+  letter-spacing: 0;
+}
+
+.access-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.maintenance-modal {
+  z-index: 82;
+}
+
+.maintenance-panel {
+  width: min(760px, calc(100vw - 32px));
+  height: auto;
+  max-height: calc(100vh - 40px);
+  grid-template-rows: auto auto;
+  border-radius: 10px;
+  background: #101713;
+  color: #edf6f1;
+}
+
+.maintenance-body {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  overflow: auto;
+}
+
+.maintenance-body .panel {
+  margin: 0;
+  border-color: #2a3832;
+  background: #17211d;
+  color: #edf6f1;
+}
+
+.maintenance-body .field {
+  border-bottom-color: #2a3832;
+}
+
+.maintenance-body .input-control {
+  border-color: #33463e;
+  background: #0f1714;
+  color: #edf6f1;
+}
+
+.maintenance-body .input-control::placeholder {
+  color: #7f9189;
+}
+
+.maintenance-overview h3,
+.maintenance-actions-panel h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.maintenance-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.maintenance-metric {
+  min-height: 72px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid #2c4038;
+  border-radius: 8px;
+  background: #101b17;
+}
+
+.maintenance-metric strong {
+  color: #f3fbf7;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.maintenance-metric span {
+  color: #9baba3;
+  font-size: 12px;
+}
+
+.maintenance-metric.warn {
+  border-color: rgba(239, 111, 120, 0.45);
+  background: rgba(239, 111, 120, 0.12);
+}
+
+.maintenance-storage {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  color: #9baba3;
+  font-size: 12px;
+}
+
+.maintenance-storage code {
+  overflow: hidden;
+  padding: 8px;
+  border: 1px solid #2a3832;
+  border-radius: 8px;
+  background: #0f1714;
+  color: #dce8e2;
+  text-overflow: ellipsis;
+}
+
+.maintenance-storage-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.maintenance-storage-grid span,
+.maintenance-storage-grid strong {
+  padding: 7px 9px;
+  border: 1px solid #2a3832;
+  border-radius: 999px;
+  background: #101b17;
+  color: #dce8e2;
+  font-size: 12px;
+}
+
+.maintenance-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.button-like {
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  border: 1px solid #33463e;
+  border-radius: 8px;
+  background: #101b17;
+  color: #edf6f1;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button-like.primary {
+  color: #fff;
+}
+
+.button-like.disabled {
+  opacity: 0.58;
+  pointer-events: none;
 }
 
 .gallery-page {

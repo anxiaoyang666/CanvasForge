@@ -1,7 +1,8 @@
-import { useEffect, type JSX } from 'react'
+import { useCallback, useRef, type JSX } from 'react'
 import { MainLayout } from '@renderer/components/layout/MainLayout'
 import { Topbar } from '@renderer/components/layout/Topbar'
 import { useAppStore } from '@renderer/store/app-store'
+import { AccessGate } from '@renderer/components/access/AccessGate'
 
 function App(): JSX.Element {
   const darkMode = useAppStore((state) => state.darkMode)
@@ -14,6 +15,7 @@ function App(): JSX.Element {
   const generationClockMs = useAppStore((state) => state.generationClockMs)
   const load = useAppStore((state) => state.load)
   const toast = useAppStore((state) => state.toast)
+  const loadedRef = useRef(false)
   const generationConversationId = view === 'poster' ? activePosterConversationId : activeConversationId
   const activeRuns = generationConversationId ? runsByConversation[generationConversationId] || [] : []
   const runningRunStartedAt = activeRuns
@@ -28,22 +30,26 @@ function App(): JSX.Element {
       }
     : { generating: false, startedAt: null }
 
-  useEffect(() => {
+  const loadAfterUnlock = useCallback(() => {
+    if (loadedRef.current) return
+    loadedRef.current = true
     void load()
   }, [load])
 
   return (
     <div className={darkMode ? 'app-root dark' : 'app-root'}>
-      <div className="shell">
-        <div className="app-frame">
-          <Topbar />
-          <MainLayout
-            activeConversationGenerating={activeGenerationState.generating}
-            activeConversationStartedAt={activeGenerationState.startedAt}
-            generationClockMs={generationClockMs}
-          />
+      <AccessGate onUnlocked={loadAfterUnlock}>
+        <div className="shell">
+          <div className="app-frame">
+            <Topbar />
+            <MainLayout
+              activeConversationGenerating={activeGenerationState.generating}
+              activeConversationStartedAt={activeGenerationState.startedAt}
+              generationClockMs={generationClockMs}
+            />
+          </div>
         </div>
-      </div>
+      </AccessGate>
       {toast ? <div className="toast show">{toast}</div> : null}
     </div>
   )

@@ -29,6 +29,7 @@ export function SettingsPanel(): JSX.Element {
   const { conversations, activeConversationId, updateActiveConversation } = useAppStore()
   const conversation = conversations.find((item) => item.id === activeConversationId) || null
   const isImageToImage = (conversation?.referenceImages.length || 0) > 0
+  const canUseInputFidelity = Boolean(conversation && isImageToImage && supportsImageInputFidelity(conversation.model))
 
   if (!conversation) return <aside className="inspector" />
 
@@ -119,42 +120,10 @@ export function SettingsPanel(): JSX.Element {
           </label>
           <div className="advanced-settings">
             <div className="advanced-settings-head">
-              <span>高级设置</span>
-              <span className={`pill tiny ${isImageToImage ? 'blue' : ''}`}>{isImageToImage ? '图生图' : '文生图'}</span>
+              <span>输出文件</span>
+              <span className="pill tiny">{conversation.outputFormat.toUpperCase()}</span>
             </div>
             <div className="advanced-settings-body">
-              <ToggleRow
-                label="流式输出"
-                help="开启后会以流式方式接收图片结果；默认关闭。"
-                checked={conversation.stream}
-                onChange={() => void updateActiveConversation({ stream: !conversation.stream })}
-              />
-              <label className="field">
-                <span className="field-label-with-help">
-                  <span>超时时间(秒)</span>
-                  <button
-                    type="button"
-                    className="info-icon"
-                    title="单张图片的最大等待时间；每次重试都会重新计时。"
-                    aria-label="超时时间说明"
-                  >
-                    <CircleHelp size={14} />
-                  </button>
-                </span>
-                <input
-                  className="input-control"
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={conversation.generationTimeoutSeconds}
-                  onChange={(event) => {
-                    const value = event.target.value.trim()
-                    void updateActiveConversation({
-                      generationTimeoutSeconds: value ? Number(value) : conversation.generationTimeoutSeconds
-                    })
-                  }}
-                />
-              </label>
               <label className="field">
                 <span className="field-label-with-help">
                   <span>输出格式</span>
@@ -222,6 +191,46 @@ export function SettingsPanel(): JSX.Element {
                   onChange={(background) => void updateActiveConversation({ background })}
                 />
               </label>
+            </div>
+          </div>
+          <div className="advanced-settings">
+            <div className="advanced-settings-head">
+              <span>稳定性与审核</span>
+              <span className={`pill tiny ${conversation.stream ? 'blue' : ''}`}>{conversation.stream ? '流式' : '标准'}</span>
+            </div>
+            <div className="advanced-settings-body">
+              <ToggleRow
+                label="流式输出"
+                help="开启后会以流式方式接收图片结果；默认关闭。"
+                checked={conversation.stream}
+                onChange={() => void updateActiveConversation({ stream: !conversation.stream })}
+              />
+              <label className="field">
+                <span className="field-label-with-help">
+                  <span>超时时间(秒)</span>
+                  <button
+                    type="button"
+                    className="info-icon"
+                    title="单张图片的最大等待时间；每次重试都会重新计时。"
+                    aria-label="超时时间说明"
+                  >
+                    <CircleHelp size={14} />
+                  </button>
+                </span>
+                <input
+                  className="input-control"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={conversation.generationTimeoutSeconds}
+                  onChange={(event) => {
+                    const value = event.target.value.trim()
+                    void updateActiveConversation({
+                      generationTimeoutSeconds: value ? Number(value) : conversation.generationTimeoutSeconds
+                    })
+                  }}
+                />
+              </label>
               <label className="field">
                 <span className="field-label-with-help">
                   <span>审核策略</span>
@@ -265,7 +274,15 @@ export function SettingsPanel(): JSX.Element {
                   onChange={(event) => void updateActiveConversation({ partialImages: Number(event.target.value) })}
                 />
               </label>
-              {isImageToImage && supportsImageInputFidelity(conversation.model) ? (
+            </div>
+          </div>
+          <div className="advanced-settings">
+            <div className="advanced-settings-head">
+              <span>图生图专用</span>
+              <span className={`pill tiny ${isImageToImage ? 'blue' : ''}`}>{isImageToImage ? `${conversation.referenceImages.length} 张参考图` : '未添加参考图'}</span>
+            </div>
+            <div className="advanced-settings-body">
+              {canUseInputFidelity ? (
                 <label className="field">
                   <span className="field-label-with-help">
                     <span>输入保真度</span>
@@ -291,7 +308,9 @@ export function SettingsPanel(): JSX.Element {
                     })}
                   />
                 </label>
-              ) : null}
+              ) : (
+                <div className="settings-note">{isImageToImage ? '当前模型不支持输入保真度参数。' : '添加参考图后，这里会显示图生图专用参数。'}</div>
+              )}
             </div>
           </div>
           <ToggleRow

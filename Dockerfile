@@ -29,6 +29,8 @@ RUN sed -i \
   && corepack enable \
   && mkdir -p /app/data
 
+COPY . .
+
 EXPOSE 3000
 
 VOLUME ["/app/data"]

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { CanvasForgeAPI, PromptTemplate, PromptTemplateInput } from '@shared/types'
 import {
   clonePromptTemplate,
   createEmptyPromptTemplateInput,
@@ -15,9 +16,32 @@ describe('prompt library', () => {
   const originalWindow = globalThis.window
 
   beforeEach(() => {
+    let serverItems: PromptTemplate[] = [...PROMPT_TEMPLATES]
     Object.defineProperty(globalThis, 'window', {
       value: {
-        localStorage: createLocalStorageMock()
+        localStorage: createLocalStorageMock(),
+        canvasForge: {
+          promptLibrary: {
+            list: async () => serverItems,
+            create: async (input: PromptTemplateInput) => {
+              const created = { ...input, id: `custom-${serverItems.length + 1}` }
+              serverItems = [created, ...serverItems]
+              return created
+            },
+            update: async (id: string, input: PromptTemplateInput) => {
+              const updated = { ...input, id }
+              serverItems = serverItems.map((item) => (item.id === id ? updated : item))
+              return updated
+            },
+            delete: async (id: string) => {
+              serverItems = serverItems.filter((item) => item.id !== id)
+            },
+            importMany: async (items: PromptTemplate[]) => {
+              serverItems = items
+              return serverItems
+            }
+          }
+        } as Partial<CanvasForgeAPI>
       },
       configurable: true
     })
@@ -72,11 +96,11 @@ describe('prompt library', () => {
     expect(template.resolution).toBe('1024x1024')
   })
 
-  it('supports create update and delete operations for templates', () => {
+  it('supports create update and delete operations for templates', async () => {
     window.localStorage.clear()
     getPromptLibraryItems()
 
-    const created = createPromptLibraryItem({
+    const created = await createPromptLibraryItem({
       ...createEmptyPromptTemplateInput(),
       title: '自定义模板',
       category: '测试分类',
@@ -88,18 +112,18 @@ describe('prompt library', () => {
       quality: 'high'
     })
     expect(created.prompt).toBe('中文提示词')
-    expect(getPromptLibraryItems().some((item) => item.id === created.id)).toBe(true)
+    expect(await window.canvasForge.promptLibrary.list()).toContainEqual(created)
 
     const builtin = getPromptLibraryItems().find((item) => item.id === 'sticker-sheet')
     expect(builtin).toBeTruthy()
-    const updated = updatePromptLibraryItem('sticker-sheet', {
+    const updated = await updatePromptLibraryItem('sticker-sheet', {
       ...clonePromptTemplate(builtin!),
       title: '贴纸包（已更新）'
     })
     expect(updated.title).toBe('贴纸包（已更新）')
 
-    deletePromptLibraryItem(created.id)
-    expect(getPromptLibraryItems().some((item) => item.id === created.id)).toBe(false)
+    await deletePromptLibraryItem(created.id)
+    expect((await window.canvasForge.promptLibrary.list()).some((item) => item.id === created.id)).toBe(false)
   })
 })
 

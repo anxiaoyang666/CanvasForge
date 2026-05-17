@@ -29,6 +29,7 @@ CanvasForge 是一个面向 Docker 部署的 Web 图片生成工作台，使用 
 - 本地图库：支持搜索、排序、筛选、收藏、删除、批量下载、作为参考图图生图和参数回填。
 - 图片预览：支持智能缩放、滚轮缩放、拖拽平移、左右切换、复制、下载和系统全屏。
 - 本地持久化：使用 SQLite 保存会话、生成轮次和图片历史，生成图片保存到本地文件夹。
+- 访问保护与维护：支持设置访问密码、下载完整备份、恢复备份、查看数据量和磁盘占用。
 - 工作台体验：支持白天/黑夜主题、可收起设置面板、可拖拽调整会话栏宽度。
 
 ## 技术栈
@@ -160,11 +161,28 @@ canvasforge_node_modules:/app/node_modules
 
 镜像构建阶段只安装系统依赖，项目依赖安装和 Web 构建都放到容器启动后的热更新流程里完成。日常更新只需要上传新文件，不需要手动重启容器，也不需要重新构建镜像。只有改了 `Dockerfile`、`docker-compose.yaml`、基础镜像或系统依赖时，才需要重新构建或重启容器。
 
+如果希望使用更稳的生产运行方式，不挂载完整源码，只保留 `data/` 持久化目录，可以使用：
+
+```bash
+docker compose -f docker-compose.prod.yaml up -d --build
+```
+
+生产 compose 会在容器启动时安装依赖、构建前后端并运行 `node out/server/index.mjs`。这种模式更新代码时需要重新构建或重启，但运行时不会把整个源码目录暴露给容器。
+
+浏览器右上角的「维护」入口可以设置访问密码、下载完整备份和恢复备份。恢复备份会先在 `data/restore-safety-copy/` 留一份恢复前文件副本，然后覆盖备份中的同名文件，并让服务重启以重新打开 SQLite 数据库。
+
+参考图上传和备份恢复请求默认限制为约 28MB JSON 请求体，可通过环境变量调整：
+
+```bash
+CANVASFORGE_MAX_JSON_BODY_BYTES=52428800 docker compose up -d
+```
+
 绿联 NAS 部署时建议上传这些文件和目录：
 
 ```text
 Dockerfile
 docker-compose.yaml
+docker-compose.prod.yaml
 .dockerignore
 package.json
 pnpm-lock.yaml

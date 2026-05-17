@@ -1,4 +1,4 @@
-import { useMemo, useState, type JSX } from 'react'
+import { useEffect, useMemo, useState, type JSX } from 'react'
 import { BookOpen, Copy, PencilLine, Plus, RotateCcw, Search, Trash2, Wand2 } from 'lucide-react'
 import { GallerySelect, type GallerySelectOption } from '@renderer/components/gallery/GallerySelect'
 import {
@@ -7,8 +7,8 @@ import {
   createPromptLibraryItem,
   deletePromptLibraryItem,
   filterPromptTemplates,
-  getPromptLibraryItems,
   getPromptTemplateCategories,
+  loadPromptLibraryItemsFromServer,
   type PromptLibraryItem,
   type PromptTemplate,
   type PromptTemplateInput,
@@ -30,7 +30,8 @@ const qualityOptions: Array<GallerySelectOption<'all' | PromptTemplate['quality'
 
 export function PromptLibraryPage(): JSX.Element {
   const { notify, applyPromptTemplate } = useAppStore()
-  const [items, setItems] = useState<PromptLibraryItem[]>(() => getPromptLibraryItems())
+  const [items, setItems] = useState<PromptLibraryItem[]>([])
+  const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [category, setCategory] = useState('all')
   const [ratio, setRatio] = useState<'all' | PromptTemplate['ratio']>('all')
@@ -50,7 +51,21 @@ export function PromptLibraryPage(): JSX.Element {
   )
   const templates = useMemo(() => filterPromptTemplates(items, { query: searchQuery, category, ratio, quality }), [category, items, quality, ratio, searchQuery])
 
-  const refreshItems = () => setItems(getPromptLibraryItems())
+  const refreshItems = async () => {
+    setLoading(true)
+    try {
+      setItems(await loadPromptLibraryItemsFromServer())
+    } catch (error) {
+      notify(error instanceof Error ? `提示词库加载失败：${error.message}` : '提示词库加载失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void refreshItems()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const resetFilters = () => {
     setCategory('all')
@@ -90,9 +105,10 @@ export function PromptLibraryPage(): JSX.Element {
 
   const handleDeleteTemplate = (template: PromptTemplate) => {
     if (!window.confirm(`确认删除「${template.title}」吗？`)) return
-    deletePromptLibraryItem(template.id)
-    refreshItems()
-    notify('已删除提示词')
+    void deletePromptLibraryItem(template.id)
+      .then(refreshItems)
+      .then(() => notify('已删除提示词'))
+      .catch((error) => notify(error instanceof Error ? `删除失败：${error.message}` : '删除失败'))
   }
 
   return (
@@ -106,7 +122,7 @@ export function PromptLibraryPage(): JSX.Element {
         <div className="prompt-library-summary">
           <span className="summary-chip total">
             <BookOpen size={13} />
-            <strong>{templates.length}</strong>
+            <strong>{loading ? '...' : templates.length}</strong>
             条
           </span>
         </div>
@@ -135,7 +151,7 @@ export function PromptLibraryPage(): JSX.Element {
       </div>
 
       <div className="prompt-library-grid">
-        {templates.length === 0 ? <div className="empty-state grid-empty">暂无匹配模板</div> : null}
+        {templates.length === 0 ? <div className="empty-state grid-empty">{loading ? '正在加载提示词库' : '暂无匹配模板'}</div> : null}
         {templates.map((template) => (
           <article
             key={template.id}
@@ -228,8 +244,8 @@ export function PromptLibraryPage(): JSX.Element {
           tagOptions={tagOptions}
           onSave={async (value) => {
             const normalized = normalizeLibraryInput(value)
-            const saved = editingTemplate.id ? updatePromptLibraryItem(editingTemplate.id, normalized) : createPromptLibraryItem(normalized)
-            refreshItems()
+            await (editingTemplate.id ? updatePromptLibraryItem(editingTemplate.id, normalized) : createPromptLibraryItem(normalized))
+            await refreshItems()
             setEditingTemplate(null)
             notify(editingTemplate.id ? '已保存提示词' : '已新增提示词')
           }}

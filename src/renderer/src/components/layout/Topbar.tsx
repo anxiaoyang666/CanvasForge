@@ -1,13 +1,21 @@
-import { useState, type JSX } from 'react'
-import { BookOpen, FilePenLine, Image as ImageIcon, PencilLine, Plug, Plus } from 'lucide-react'
+import { useEffect, useState, type JSX } from 'react'
+import { BookOpen, FilePenLine, HardDrive, Image as ImageIcon, PencilLine, Plug, Plus, Shield } from 'lucide-react'
+import type { MaintenanceStatus } from '@shared/types'
 import { useAppStore } from '@renderer/store/app-store'
 import { ApiSettingsModal } from '@renderer/components/settings/ApiSettingsModal'
+import { MaintenanceModal } from '@renderer/components/maintenance/MaintenanceModal'
 import logoMark from '@renderer/assets/logo-mark.svg'
 
 export function Topbar(): JSX.Element {
   const { settings, view, setView, createConversation } = useAppStore()
   const [apiSettingsVisible, setApiSettingsVisible] = useState(false)
+  const [maintenanceVisible, setMaintenanceVisible] = useState(false)
+  const [maintenanceStatus, setMaintenanceStatus] = useState<MaintenanceStatus | null>(null)
   const endpoint = `${settings?.baseURL || 'https://api.openai.com'}/v1/images/generations`
+
+  useEffect(() => {
+    void window.canvasForge.maintenance.status().then(setMaintenanceStatus).catch(() => setMaintenanceStatus(null))
+  }, [])
   const createCurrentConversation = () => {
     if (view === 'poster') {
       void createConversation({
@@ -38,6 +46,13 @@ export function Topbar(): JSX.Element {
         <span>{settings?.apiKeyStored ? '通道在线' : '等待密钥'}</span>
         <code>{endpoint}</code>
       </div>
+      {maintenanceStatus ? (
+        <button className="top-metric" onClick={() => setMaintenanceVisible(true)} title="查看数据状态">
+          <HardDrive size={15} />
+          <span>{maintenanceStatus.counts.succeededImages} 图</span>
+          <strong>{formatBytes(maintenanceStatus.storage.totalBytes)}</strong>
+        </button>
+      ) : null}
       <nav className="top-actions" aria-label="主导航">
         <button className={view === 'workspace' ? 'active-soft' : ''} onClick={() => setView('workspace')}>
           <PencilLine size={16} />
@@ -59,12 +74,24 @@ export function Topbar(): JSX.Element {
           <Plug size={16} />
           API
         </button>
+        <button onClick={() => setMaintenanceVisible(true)} title="系统维护">
+          <Shield size={16} />
+          维护
+        </button>
         <button className="primary" onClick={createCurrentConversation}>
           <Plus size={16} />
           新建会话
         </button>
       </nav>
       {apiSettingsVisible ? <ApiSettingsModal onClose={() => setApiSettingsVisible(false)} /> : null}
+      {maintenanceVisible ? <MaintenanceModal onClose={() => setMaintenanceVisible(false)} /> : null}
     </header>
   )
+}
+
+function formatBytes(value: number): string {
+  if (value >= 1024 * 1024 * 1024) return `${(value / 1024 / 1024 / 1024).toFixed(1)}GB`
+  if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)}MB`
+  if (value >= 1024) return `${Math.round(value / 1024)}KB`
+  return `${value}B`
 }

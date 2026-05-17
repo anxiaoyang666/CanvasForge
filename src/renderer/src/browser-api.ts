@@ -5,7 +5,12 @@ import type {
   GenerateImageInput,
   HistoryListOptions,
   CanvasForgeAPI,
+  AccessLoginInput,
+  AccessPasswordUpdate,
+  BackupManifest,
   PromptAssistInput,
+  PromptTemplate,
+  PromptTemplateInput,
   ProviderModelsInput,
   ProviderSettingsUpdate,
   ReferenceImageImportFile
@@ -20,10 +25,21 @@ export function installBrowserCanvasForgeAPI(): void {
 
 function createBrowserCanvasForgeAPI(): CanvasForgeAPI {
   return {
+    access: {
+      status: () => request('/api/access/status'),
+      login: (input: AccessLoginInput) => request('/api/access/login', { method: 'POST', body: input as unknown as JsonValue }),
+      logout: () => request('/api/access/logout', { method: 'POST' }),
+      updatePassword: (input: AccessPasswordUpdate) => request('/api/access/password', { method: 'PUT', body: input as unknown as JsonValue })
+    },
     settings: {
       get: () => request('/api/settings'),
       update: (input: ProviderSettingsUpdate) => request('/api/settings', { method: 'PUT', body: input as JsonValue }),
       models: (input?: ProviderModelsInput) => request('/api/settings/models', { method: 'POST', body: (input || {}) as JsonValue })
+    },
+    maintenance: {
+      status: () => request('/api/maintenance/status'),
+      backupUrl: () => '/api/maintenance/backup',
+      restore: (backup: BackupManifest) => request('/api/maintenance/restore', { method: 'POST', body: backup as unknown as JsonValue })
     },
     conversation: {
       list: () => request('/api/conversations'),
@@ -62,6 +78,14 @@ function createBrowserCanvasForgeAPI(): CanvasForgeAPI {
       inspire: async (input?: PromptAssistInput) => (await request<{ text: string }>('/api/prompt/inspire', { method: 'POST', body: (input || {}) as JsonValue })).text,
       enrich: async (input: PromptAssistInput & { prompt: string }) =>
         (await request<{ text: string }>('/api/prompt/enrich', { method: 'POST', body: input as JsonValue })).text
+    },
+    promptLibrary: {
+      list: () => request('/api/prompt-library'),
+      create: (input: PromptTemplateInput) => request('/api/prompt-library', { method: 'POST', body: input as unknown as JsonValue }),
+      update: (id: string, input: PromptTemplateInput) =>
+        request(`/api/prompt-library/${encodeURIComponent(id)}`, { method: 'PUT', body: input as unknown as JsonValue }),
+      delete: (id: string) => request(`/api/prompt-library/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+      importMany: (items: PromptTemplate[]) => request('/api/prompt-library/import', { method: 'POST', body: items as unknown as JsonValue })
     },
     reference: {
       importFiles: (conversationId: string, files: ReferenceImageImportFile[]) =>

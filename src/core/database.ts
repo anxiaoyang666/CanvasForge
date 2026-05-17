@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, extname, join, resolve } from 'node:path'
 import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
@@ -20,8 +20,12 @@ import type {
   GenerationRunStatus,
   HistoryListOptions,
   ImageHistoryItem,
+  ImageQuality,
   ImageRatio,
   ImageStatus,
+  MaintenanceStatus,
+  PromptTemplate,
+  PromptTemplateInput,
   ReferenceImage,
   WorkspaceType
 } from '@shared/types'
@@ -53,6 +57,113 @@ export class AppDatabase {
     this.db = new Database(join(userDataDir, 'canvasforge.sqlite'))
     this.db.pragma('journal_mode = WAL')
     this.migrate()
+  }
+
+  getMaintenanceStatus(userDataDir: string): MaintenanceStatus {
+    const counts = {
+      conversations: Number((this.db.prepare('select count(*) as count from conversations').get() as Row).count),
+      runs: Number((this.db.prepare('select count(*) as count from generation_runs').get() as Row).count),
+      history: Number((this.db.prepare('select count(*) as count from image_history').get() as Row).count),
+      succeededImages: Number((this.db.prepare("select count(*) as count from image_history where status = 'succeeded'").get() as Row).count),
+      failedItems: Number((this.db.prepare("select count(*) as count from image_history where status = 'failed'").get() as Row).count),
+      referenceImages: Number((this.db.prepare('select count(*) as count from reference_images').get() as Row).count),
+      promptTemplates: Number((this.db.prepare('select count(*) as count from prompt_templates').get() as Row).count)
+    }
+    const recentFailureRow = this.db
+      .prepare("select error_message, created_at from image_history where status = 'failed' and error_message is not null order by created_at desc limit 1")
+      .get() as Row | undefined
+    const databasePath = join(userDataDir, 'canvasforge.sqlite')
+    const storage = {
+      databaseBytes: fileSize(databasePath) + fileSize(`${databasePath}-wal`) + fileSize(`${databasePath}-shm`),
+      imagesBytes: directorySize(this.imagesDir),
+      referenceImagesBytes: directorySize(this.referenceImagesDir),
+      totalBytes: 0
+    }
+    storage.totalBytes = storage.databaseBytes + storage.imagesBytes + storage.referenceImagesBytes
+    return {
+      dataDir: userDataDir,
+      counts,
+      storage,
+      recentFailure: recentFailureRow
+        ? {
+            message: String(recentFailureRow.error_message),
+            createdAt: String(recentFailureRow.created_at)
+          }
+        : null
+    }
+  }
+
+  listPromptTemplates(): PromptTemplate[] {
+    return this.db
+      .prepare('select * from prompt_templates order by updated_at desc, created_at desc')
+      .all()
+      .map((row) => promptTemplateFromRow(row as Row))
+  }
+
+  createPromptTemplate(input: PromptTemplateInput): PromptTemplate {
+    const now = new Date().toISOString()
+    const template = normalizePromptTemplateInput({ ...input, id: randomUUID() }, randomUUID())
+    this.db
+      .prepare(
+        `insert into prompt_templates
+        (id, title, category, description, prompt, tags, ratio, resolution, quality, created_at, updated_at)
+        values (@id, @title, @category, @description, @prompt, @tags, @ratio, @resolution, @quality, @createdAt, @updatedAt)`
+      )
+      .run({ ...template, tags: JSON.stringify(template.tags), createdAt: now, updatedAt: now })
+    return template
+  }
+
+  updatePromptTemplate(id: string, input: PromptTemplateInput): PromptTemplate {
+    const current = this.db.prepare('select id from prompt_templates where id = ?').get(id)
+    if (!current) throw new Error('Prompt template not found.')
+    const updatedAt = new Date().toISOString()
+    const template = normalizePromptTemplateInput({ ...input, id }, id)
+    this.db
+      .prepare(
+        `update prompt_templates set
+        title = @title,
+        category = @category,
+        description = @description,
+        prompt = @prompt,
+        tags = @tags,
+        ratio = @ratio,
+        resolution = @resolution,
+        quality = @quality,
+        updated_at = @updatedAt
+        where id = @id`
+      )
+      .run({ ...template, tags: JSON.stringify(template.tags), updatedAt })
+    return template
+  }
+
+  deletePromptTemplate(id: string): void {
+    this.db.prepare('delete from prompt_templates where id = ?').run(id)
+  }
+
+  importPromptTemplates(items: PromptTemplate[]): PromptTemplate[] {
+    const now = new Date().toISOString()
+    const insert = this.db.prepare(
+      `insert or replace into prompt_templates
+      (id, title, category, description, prompt, tags, ratio, resolution, quality, created_at, updated_at)
+      values (@id, @title, @category, @description, @prompt, @tags, @ratio, @resolution, @quality,
+        coalesce((select created_at from prompt_templates where id = @id), @createdAt), @updatedAt)`
+    )
+    const templates = items
+      .map((item) => {
+        try {
+          return normalizePromptTemplateInput(item, item.id || randomUUID())
+        } catch {
+          return null
+        }
+      })
+      .filter((item): item is PromptTemplate => item != null)
+    const transaction = this.db.transaction(() => {
+      for (const template of templates) {
+        insert.run({ ...template, tags: JSON.stringify(template.tags), createdAt: now, updatedAt: now })
+      }
+    })
+    transaction()
+    return this.listPromptTemplates()
   }
 
   close(): void {
@@ -558,6 +669,20 @@ export class AppDatabase {
         created_at text not null,
         primary key (run_id, reference_image_id)
       );
+
+      create table if not exists prompt_templates (
+        id text primary key,
+        title text not null,
+        category text not null,
+        description text not null,
+        prompt text not null,
+        tags text not null default '[]',
+        ratio text not null,
+        resolution text not null,
+        quality text not null,
+        created_at text not null,
+        updated_at text not null
+      );
     `)
     const conversationColumns = this.db.prepare('pragma table_info(conversations)').all() as Array<{ name: string }>
     if (!conversationColumns.some((column) => column.name === 'workspace_type')) {
@@ -925,5 +1050,87 @@ function parseJsonRecord(value: unknown): Record<string, unknown> {
     return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload as Record<string, unknown> : {}
   } catch {
     return {}
+  }
+}
+
+function promptTemplateFromRow(row: Row): PromptTemplate {
+  return {
+    id: String(row.id),
+    title: String(row.title),
+    category: String(row.category),
+    description: String(row.description),
+    prompt: String(row.prompt),
+    tags: parseStringArray(row.tags),
+    ratio: parseImageRatio(row.ratio),
+    resolution: String(row.resolution),
+    quality: parseImageQuality(row.quality)
+  }
+}
+
+function normalizePromptTemplateInput(input: Partial<PromptTemplate>, fallbackId: string): PromptTemplate {
+  const title = normalizeText(input.title)
+  const category = normalizeText(input.category)
+  const description = normalizeText(input.description)
+  const prompt = normalizeText(input.prompt)
+  if (!title || !category || !description || !prompt) throw new Error('提示词标题、分类、说明和正文不能为空。')
+  return {
+    id: normalizeText(input.id) || fallbackId,
+    title,
+    category,
+    description,
+    prompt,
+    tags: Array.isArray(input.tags) ? input.tags.map(normalizeText).filter(Boolean).slice(0, 24) : [],
+    ratio: parseImageRatio(input.ratio),
+    resolution: normalizeText(input.resolution) || getDefaultImageSize(parseImageRatio(input.ratio)),
+    quality: parseImageQuality(input.quality)
+  }
+}
+
+function normalizeText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function parseStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(normalizeText).filter(Boolean)
+  if (typeof value !== 'string' || !value.trim()) return []
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return Array.isArray(parsed) ? parsed.map(normalizeText).filter(Boolean) : []
+  } catch {
+    return []
+  }
+}
+
+function parseImageRatio(value: unknown): ImageRatio {
+  return typeof value === 'string' && ['1:1', '3:2', '2:3', '4:3', '3:4', '16:9', '9:16', '21:9', '9:21'].includes(value)
+    ? value as ImageRatio
+    : '1:1'
+}
+
+function parseImageQuality(value: unknown): ImageQuality {
+  return typeof value === 'string' && ['auto', 'low', 'medium', 'high'].includes(value)
+    ? value as ImageQuality
+    : 'auto'
+}
+
+function fileSize(filePath: string): number {
+  try {
+    return existsSync(filePath) ? statSync(filePath).size : 0
+  } catch {
+    return 0
+  }
+}
+
+function directorySize(directoryPath: string): number {
+  try {
+    if (!existsSync(directoryPath)) return 0
+    return readdirSync(directoryPath, { withFileTypes: true }).reduce((total, entry) => {
+      const childPath = join(directoryPath, entry.name)
+      if (entry.isDirectory()) return total + directorySize(childPath)
+      if (entry.isFile()) return total + fileSize(childPath)
+      return total
+    }, 0)
+  } catch {
+    return 0
   }
 }

@@ -1,16 +1,22 @@
-import { createReadStream, existsSync, statSync } from 'node:fs'
+import { copyFileSync, createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { extname, join, normalize, resolve } from 'node:path'
+import { dirname, extname, join, normalize, relative, resolve } from 'node:path'
+import { randomBytes, timingSafeEqual, createHash } from 'node:crypto'
 import { AppDatabase } from '@core/database'
 import { ImageService } from '@core/image-service'
 import { PromptService } from '@core/prompt-service'
 import { SettingsStore } from '@core/settings'
 import { WebSafeStorage } from './web-safe-storage'
 import type {
+  AccessLoginInput,
+  AccessPasswordUpdate,
+  BackupManifest,
   ConversationCreateInput,
   ConversationUpdate,
   GenerateImageInput,
   HistoryListOptions,
+  PromptTemplate,
+  PromptTemplateInput,
   ProviderModel,
   ProviderModelsInput,
   PromptAssistInput,
@@ -30,6 +36,8 @@ const host = process.env.HOST || '0.0.0.0'
 const dataDir = resolve(process.env.CANVASFORGE_DATA_DIR || join(process.cwd(), 'data'))
 const staticDir = resolve(process.env.CANVASFORGE_STATIC_DIR || join(process.cwd(), 'out/renderer'))
 const buildMarker = 'canvasforge-web-encryption-check-2026-05-11'
+const maxJsonBodyBytes = Number(process.env.CANVASFORGE_MAX_JSON_BODY_BYTES || 28 * 1024 * 1024)
+const access = createAccessController(join(dataDir, 'access.json'))
 
 const database = new AppDatabase(dataDir)
 database.recoverInterruptedRuns()
@@ -79,6 +87,10 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse, 
   }
 
   if (pathname.startsWith('/api/')) {
+    if (!isApiRequestAllowed(request, pathname)) {
+      sendJson(response, 401, { error: '需要先输入访问密码。' })
+      return
+    }
     await handleApi(request, response, context, pathname, requestUrl)
     return
   }
@@ -106,6 +118,42 @@ async function handleApi(
   const method = request.method || 'GET'
 
   try {
+    if (method === 'GET' && pathname === '/api/access/status') {
+      sendJson(response, 200, access.status(request))
+      return
+    }
+    if (method === 'POST' && pathname === '/api/access/login') {
+      const status = access.login(request, response, await readJson<AccessLoginInput>(request, { password: '' }))
+      sendJson(response, 200, status)
+      return
+    }
+    if (method === 'POST' && pathname === '/api/access/logout') {
+      sendJson(response, 200, access.logout(response))
+      return
+    }
+    if (method === 'PUT' && pathname === '/api/access/password') {
+      sendJson(response, 200, access.updatePassword(request, response, await readJson<AccessPasswordUpdate>(request)))
+      return
+    }
+
+    if (method === 'GET' && pathname === '/api/maintenance/status') {
+      sendJson(response, 200, context.database.getMaintenanceStatus(dataDir))
+      return
+    }
+    if (method === 'GET' && pathname === '/api/maintenance/backup') {
+      sendBackup(response)
+      return
+    }
+    if (method === 'POST' && pathname === '/api/maintenance/restore') {
+      restoreBackup(await readJson<BackupManifest>(request))
+      sendJson(response, 200, { ok: true, restarting: true })
+      setTimeout(() => {
+        database.close()
+        process.exit(0)
+      }, 300).unref()
+      return
+    }
+
     if (method === 'GET' && pathname === '/api/settings') {
       sendJson(response, 200, context.settings.getPublicSettings())
       return
@@ -178,6 +226,28 @@ async function handleApi(
     }
     if (method === 'POST' && pathname === '/api/prompt/enrich') {
       sendJson(response, 200, { text: await context.promptService.enrich(await readJson<PromptAssistInput & { prompt: string }>(request)) })
+      return
+    }
+    if (method === 'GET' && pathname === '/api/prompt-library') {
+      sendJson(response, 200, context.database.listPromptTemplates())
+      return
+    }
+    if (method === 'POST' && pathname === '/api/prompt-library') {
+      sendJson(response, 200, context.database.createPromptTemplate(await readJson<PromptTemplateInput>(request)))
+      return
+    }
+    if (method === 'POST' && pathname === '/api/prompt-library/import') {
+      sendJson(response, 200, context.database.importPromptTemplates(await readJson<PromptTemplate[]>(request, [])))
+      return
+    }
+    const promptTemplateMatch = pathname.match(/^\/api\/prompt-library\/([^/]+)$/)
+    if (promptTemplateMatch && method === 'PUT') {
+      sendJson(response, 200, context.database.updatePromptTemplate(promptTemplateMatch[1], await readJson<PromptTemplateInput>(request)))
+      return
+    }
+    if (promptTemplateMatch && method === 'DELETE') {
+      context.database.deletePromptTemplate(promptTemplateMatch[1])
+      sendJson(response, 200, { ok: true })
       return
     }
 
@@ -312,7 +382,17 @@ function serveStatic(response: ServerResponse, pathname: string): void {
 function readJson<T>(request: IncomingMessage, fallback?: T): Promise<T> {
   return new Promise((resolveJson, reject) => {
     const chunks: Buffer[] = []
-    request.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
+    let receivedBytes = 0
+    request.on('data', (chunk) => {
+      const buffer = Buffer.from(chunk)
+      receivedBytes += buffer.length
+      if (receivedBytes > maxJsonBodyBytes) {
+        reject(new Error(`请求内容不能超过 ${formatBytes(maxJsonBodyBytes)}。`))
+        request.destroy()
+        return
+      }
+      chunks.push(buffer)
+    })
     request.on('end', () => {
       const text = Buffer.concat(chunks).toString('utf8')
       if (!text.trim() && fallback !== undefined) {
@@ -336,6 +416,162 @@ function sendJson(response: ServerResponse, statusCode: number, payload: unknown
     'Content-Length': Buffer.byteLength(body)
   })
   response.end(body)
+}
+
+function isApiRequestAllowed(request: IncomingMessage, pathname: string): boolean {
+  if (pathname === '/api/access/status' || pathname === '/api/access/login') return true
+  return access.isAllowed(request)
+}
+
+type AccessController = ReturnType<typeof createAccessController>
+
+function createAccessController(filePath: string) {
+  type AccessFile = {
+    passwordHash?: string
+    sessionTokenHash?: string
+  }
+  const cookieName = 'canvasforge_session'
+  const read = (): AccessFile => {
+    if (!existsSync(filePath)) return {}
+    try {
+      return JSON.parse(readFileSync(filePath, 'utf8')) as AccessFile
+    } catch {
+      return {}
+    }
+  }
+  const write = (payload: AccessFile): void => {
+    mkdirSync(dirname(filePath), { recursive: true })
+    writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
+  }
+  const hash = (value: string): string => createHash('sha256').update(value).digest('hex')
+  const hasPassword = (): boolean => Boolean(read().passwordHash)
+  const cookieToken = (request: IncomingMessage): string | null => {
+    const cookie = request.headers.cookie || ''
+    const match = cookie.split(';').map((item) => item.trim()).find((item) => item.startsWith(`${cookieName}=`))
+    return match ? decodeURIComponent(match.slice(cookieName.length + 1)) : null
+  }
+  const tokenMatches = (token: string, expectedHash: string): boolean => {
+    const actual = Buffer.from(hash(token), 'hex')
+    const expected = Buffer.from(expectedHash, 'hex')
+    return actual.length === expected.length && timingSafeEqual(actual, expected)
+  }
+  const setSessionCookie = (response: ServerResponse, token: string): void => {
+    response.setHeader('Set-Cookie', `${cookieName}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax`)
+  }
+  const clearSessionCookie = (response: ServerResponse): void => {
+    response.setHeader('Set-Cookie', `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`)
+  }
+  return {
+    isAllowed(request: IncomingMessage): boolean {
+      const payload = read()
+      if (!payload.passwordHash) return true
+      const token = cookieToken(request)
+      return Boolean(token && payload.sessionTokenHash && tokenMatches(token, payload.sessionTokenHash))
+    },
+    status(request: IncomingMessage) {
+      return {
+        protectionEnabled: hasPassword(),
+        authenticated: this.isAllowed(request)
+      }
+    },
+    login(request: IncomingMessage, response: ServerResponse, input: AccessLoginInput) {
+      const payload = read()
+      if (!payload.passwordHash) return this.status(request)
+      const password = typeof input.password === 'string' ? input.password : ''
+      if (!tokenMatches(password, payload.passwordHash)) {
+        throw new Error('访问密码不正确。')
+      }
+      const token = randomBytes(32).toString('hex')
+      write({ ...payload, sessionTokenHash: hash(token) })
+      setSessionCookie(response, token)
+      return { protectionEnabled: true, authenticated: true }
+    },
+    logout(response: ServerResponse) {
+      const payload = read()
+      write({ ...payload, sessionTokenHash: undefined })
+      clearSessionCookie(response)
+      return { protectionEnabled: Boolean(payload.passwordHash), authenticated: false }
+    },
+    updatePassword(request: IncomingMessage, response: ServerResponse, input: AccessPasswordUpdate) {
+      const password = typeof input.password === 'string' ? input.password.trim() : ''
+      if (!password) {
+        write({})
+        clearSessionCookie(response)
+        return { protectionEnabled: false, authenticated: true }
+      }
+      const token = randomBytes(32).toString('hex')
+      write({ passwordHash: hash(password), sessionTokenHash: hash(token) })
+      setSessionCookie(response, token)
+      return { protectionEnabled: true, authenticated: this.isAllowed(request) || true }
+    }
+  }
+}
+
+function sendBackup(response: ServerResponse): void {
+  const manifest: BackupManifest = {
+    app: 'CanvasForge',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    files: []
+  }
+  for (const filePath of collectBackupFiles(dataDir)) {
+    manifest.files.push({
+      path: relative(dataDir, filePath).replaceAll('\\', '/'),
+      contentBase64: readFileSync(filePath).toString('base64')
+    })
+  }
+  const body = JSON.stringify(manifest)
+  response.writeHead(200, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': Buffer.byteLength(body),
+    'Content-Disposition': `attachment; filename="canvasforge-backup-${new Date().toISOString().slice(0, 10)}.json"`
+  })
+  response.end(body)
+}
+
+function restoreBackup(manifest: BackupManifest): void {
+  if (!manifest || manifest.app !== 'CanvasForge' || !Array.isArray(manifest.files)) {
+    throw new Error('备份文件格式不正确。')
+  }
+  const restoreRoot = dataDir
+  const backupBeforeRestore = join(dataDir, 'restore-safety-copy')
+  mkdirSync(backupBeforeRestore, { recursive: true })
+  for (const filePath of collectBackupFiles(dataDir)) {
+    const target = join(backupBeforeRestore, relative(dataDir, filePath))
+    mkdirSync(dirname(target), { recursive: true })
+    copyFileSync(filePath, target)
+  }
+  for (const file of manifest.files) {
+    const normalizedPath = normalize(String(file.path || '')).replace(/^(\.\.[/\\])+/, '')
+    const target = resolve(restoreRoot, normalizedPath)
+    if (!target.startsWith(restoreRoot)) throw new Error('备份中包含非法路径。')
+    mkdirSync(dirname(target), { recursive: true })
+    writeFileSync(target, Buffer.from(String(file.contentBase64 || ''), 'base64'))
+  }
+}
+
+function collectBackupFiles(root: string): string[] {
+  const files: string[] = []
+  const visit = (directory: string): void => {
+    if (!existsSync(directory)) return
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const filePath = join(directory, entry.name)
+      if (entry.name === 'restore-safety-copy') continue
+      if (entry.isDirectory()) {
+        visit(filePath)
+      } else if (entry.isFile()) {
+        files.push(filePath)
+      }
+    }
+  }
+  visit(root)
+  return files
+}
+
+function formatBytes(value: number): string {
+  if (value >= 1024 * 1024) return `${Math.round(value / 1024 / 1024)}MB`
+  if (value >= 1024) return `${Math.round(value / 1024)}KB`
+  return `${value}B`
 }
 
 function base64ToBuffer(value: string | ArrayBuffer): Buffer {
