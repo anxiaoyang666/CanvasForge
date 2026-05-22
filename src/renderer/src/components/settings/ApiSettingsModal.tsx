@@ -6,7 +6,7 @@ import { useAppStore } from '@renderer/store/app-store'
 import { EditableSelect } from '@renderer/components/common/EditableSelect'
 
 export function ApiSettingsModal({ onClose }: { onClose: () => void }): JSX.Element {
-  const { settings, updateSettings } = useAppStore()
+  const { settings, updateSettings, notify } = useAppStore()
   const [baseURL, setBaseURL] = useState(settings?.baseURL || 'https://api.openai.com')
   const [defaultModel, setDefaultModel] = useState(settings?.defaultModel || 'gpt-image-2')
   const [promptModel, setPromptModel] = useState(settings?.promptModel || DEFAULT_PROMPT_MODEL)
@@ -14,6 +14,7 @@ export function ApiSettingsModal({ onClose }: { onClose: () => void }): JSX.Elem
   const [models, setModels] = useState<ProviderModel[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
   const [modelsError, setModelsError] = useState<string | null>(null)
+  const [settingsSaving, setSettingsSaving] = useState(false)
 
   useEffect(() => {
     if (!settings) return
@@ -23,11 +24,16 @@ export function ApiSettingsModal({ onClose }: { onClose: () => void }): JSX.Elem
   }, [settings])
 
   useEffect(() => {
-    void refreshModels()
+    if (settings?.apiKeyStored) void refreshModels()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [settings?.apiKeyStored])
 
   const refreshModels = async () => {
+    if (!settings?.apiKeyStored && !apiKey.trim()) {
+      setModels([])
+      setModelsError('输入 API Key 后再刷新模型列表。')
+      return
+    }
     setModelsLoading(true)
     setModelsError(null)
     try {
@@ -40,6 +46,22 @@ export function ApiSettingsModal({ onClose }: { onClose: () => void }): JSX.Elem
       setModelsError(error instanceof Error ? error.message : '模型列表获取失败')
     } finally {
       setModelsLoading(false)
+    }
+  }
+
+  const saveSettings = async () => {
+    setSettingsSaving(true)
+    setModelsError(null)
+    try {
+      await updateSettings({ baseURL, defaultModel, promptModel, apiKey: apiKey.trim() ? apiKey : undefined })
+      setApiKey('')
+      onClose()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '保存失败'
+      setModelsError(message)
+      notify(`API 设置保存失败：${message}`)
+    } finally {
+      setSettingsSaving(false)
     }
   }
 
@@ -106,14 +128,13 @@ export function ApiSettingsModal({ onClose }: { onClose: () => void }): JSX.Elem
             <button
               type="button"
               className="primary"
+              disabled={settingsSaving}
               onClick={() => {
-                void updateSettings({ baseURL, defaultModel, promptModel, apiKey: apiKey.trim() ? apiKey : undefined })
-                setApiKey('')
-                onClose()
+                void saveSettings()
               }}
             >
               <Settings size={15} />
-              保存 API 设置
+              {settingsSaving ? '保存中' : '保存 API 设置'}
             </button>
           </div>
         </div>

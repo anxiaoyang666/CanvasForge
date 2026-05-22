@@ -5,6 +5,7 @@ import { IMAGE_QUALITIES, IMAGE_RATIOS, formatImageQuality } from '@shared/image
 import { useAppStore } from '@renderer/store/app-store'
 import { orderHandPosterDerivatives } from '@renderer/hand-poster-history'
 import { ImageTile } from '@renderer/components/workspace/ImageTile'
+import { getGalleryDownloadPlan } from '@renderer/gallery-download'
 import { GallerySelect, type GallerySelectOption } from './GallerySelect'
 
 type GalleryStatusFilter = 'all' | ImageStatus
@@ -240,10 +241,16 @@ export function GalleryPage(): JSX.Element {
   }
 
   const downloadSelected = async () => {
-    const result = await window.canvasForge.image.downloadMany(Array.from(selectedIds))
+    const plan = getGalleryDownloadPlan(selectedItems)
+    if (plan.ids.length === 0) {
+      notify('没有可下载的成功图片')
+      return
+    }
+    const result = await window.canvasForge.image.downloadMany(plan.ids)
     if (!result) return
-    if (result.skipped > 0) {
-      notify(`已下载 ${result.saved} 张图片，跳过 ${result.skipped} 项`)
+    const skipped = plan.skipped + result.skipped
+    if (skipped > 0) {
+      notify(`已下载 ${result.saved} 张图片，跳过 ${skipped} 项`)
       return
     }
     notify(`已下载 ${result.saved} 张图片`)

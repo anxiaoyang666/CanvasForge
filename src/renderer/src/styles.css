@@ -3164,6 +3164,7 @@ button:hover:not(:disabled) {
 
 .topbar {
   gap: 18px;
+  min-width: 0;
   padding: 0 18px;
   border-bottom: 1px solid rgba(20, 25, 32, 0.12);
   background: rgba(17, 20, 27, 0.95);
@@ -3176,6 +3177,7 @@ button:hover:not(:disabled) {
 }
 
 .brand {
+  flex: 0 0 auto;
   min-width: 238px;
   gap: 11px;
 }
@@ -3227,6 +3229,8 @@ button:hover:not(:disabled) {
 }
 
 .endpoint {
+  min-width: 180px;
+  flex: 1 1 320px;
   height: 38px;
   max-width: 520px;
   border-color: rgba(255, 255, 255, 0.12);
@@ -3253,10 +3257,20 @@ button:hover:not(:disabled) {
 }
 
 .top-actions {
+  min-width: 0;
+  flex: 0 1 auto;
   gap: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.top-actions::-webkit-scrollbar {
+  display: none;
 }
 
 .top-actions button {
+  flex: 0 0 auto;
   height: 38px;
   border-color: rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.06);
@@ -3331,6 +3345,11 @@ button:hover:not(:disabled) {
 
 .main.gallery-mode {
   grid-template-columns: minmax(0, 1fr);
+}
+
+.main.gallery-mode .gallery-page,
+.main.gallery-mode .prompt-library-page {
+  border-radius: 12px;
 }
 
 .main.poster-mode {
@@ -3522,11 +3541,13 @@ button:hover:not(:disabled) {
 
 .composer-head {
   align-items: flex-start;
+  flex-wrap: wrap;
   margin-bottom: 12px;
 }
 
 .composer-tools,
 .composer-actions {
+  min-width: 0;
   gap: 6px;
 }
 
@@ -3928,6 +3949,12 @@ textarea {
   padding: 12px 0;
 }
 
+@media (max-width: 1360px) {
+  .endpoint {
+    display: none;
+  }
+}
+
 .gallery-tools .search-wrap {
   flex: 1 1 300px;
   width: auto;
@@ -4071,6 +4098,11 @@ textarea {
     grid-template-columns: minmax(190px, var(--sidebar-width, 240px)) 8px minmax(0, 1fr);
   }
 
+  .main.poster-mode,
+  .main.poster-mode.settings-hidden {
+    grid-template-columns: minmax(190px, var(--sidebar-width, 240px)) 8px minmax(0, 1fr);
+  }
+
   .main.gallery-mode {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -4082,18 +4114,39 @@ textarea {
   }
 
   .topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
     flex-wrap: wrap;
+    width: 100%;
+    max-width: 100vw;
     padding: 12px;
+    overflow-x: hidden;
   }
 
   .brand,
   .endpoint,
   .top-actions {
-    width: 100%;
+    width: calc(100vw - 24px);
+    width: calc(100dvw - 24px);
+    min-width: 0;
+    max-width: 100%;
+    max-width: calc(100vw - 24px);
+    max-width: calc(100dvw - 24px);
   }
 
   .top-actions {
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    overflow-x: visible;
+    overflow-y: visible;
+  }
+
+  .top-actions button {
+    width: 100%;
+    max-width: calc(100dvw - 24px);
+    min-width: 0;
+    padding: 0 8px;
   }
 
   .main,
@@ -4126,6 +4179,36 @@ textarea {
   .prompt-library-hero {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .composer-tools,
+  .composer-actions {
+    width: 100%;
+  }
+
+  .composer-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    justify-content: flex-start;
+  }
+
+  .composer-actions button {
+    width: 100%;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .prompt-foot {
+    align-items: stretch;
+  }
+
+  .mini-controls {
+    flex: 1 1 auto;
+  }
+
+  .generate-button {
+    width: 100%;
+    min-width: 0;
   }
 
 }

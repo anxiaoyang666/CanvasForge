@@ -287,7 +287,7 @@ function HandPosterInspector({ conversation, generating }: { conversation: Conve
       notify('先输入手抄报主题')
       return
     }
-    if (draftSubmitting) return
+    if (draftSubmitting || generating) return
     setDraftSubmitting(true)
     const option = orientationConfig[orientation]
     try {
@@ -318,7 +318,7 @@ function HandPosterInspector({ conversation, generating }: { conversation: Conve
   }
 
   const generateLineArt = async () => {
-    if (lineArtSubmitting) return
+    if (lineArtSubmitting || generating) return
     if (draftCandidates.length > 1 && !selectedDraftId) {
       notify('先选择一张满意的确认稿')
       return
@@ -502,13 +502,13 @@ function HandPosterInspector({ conversation, generating }: { conversation: Conve
           ) : null}
         </section>
         <section className="panel poster-action-panel">
-          <button className="primary full" disabled={!themeText || draftSubmitting} onClick={() => void generateDraft()}>
+          <button className="primary full" disabled={!themeText || draftSubmitting || generating} onClick={() => void generateDraft()}>
             {draftSubmitting ? <Loader2 className="spin" size={16} /> : <Sparkles size={16} />}
-            生成确认稿
+            {generating ? '任务生成中' : '生成确认稿'}
           </button>
-          <button className="full" disabled={lineArtSubmitting} onClick={() => void generateLineArt()}>
+          <button className="full" disabled={lineArtSubmitting || generating} onClick={() => void generateLineArt()}>
             {lineArtSubmitting ? <Loader2 className="spin" size={16} /> : <CheckCircle2 size={16} />}
-            满意，生成两张无字线稿
+            {generating ? '等待当前任务完成' : '满意，生成两张无字线稿'}
           </button>
         </section>
       </div>

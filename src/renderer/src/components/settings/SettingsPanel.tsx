@@ -25,6 +25,18 @@ import { GallerySelect } from '@renderer/components/gallery/GallerySelect'
 const ratios: ImageRatio[] = IMAGE_RATIOS
 const qualities: ImageQuality[] = IMAGE_QUALITIES
 
+function clampInteger(value: string, min: number, max: number): number {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return min
+  return Math.min(max, Math.max(min, Math.trunc(parsed)))
+}
+
+function clampOptionalInteger(value: string, min: number, max: number): number | null {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  return clampInteger(trimmed, min, max)
+}
+
 export function SettingsPanel(): JSX.Element {
   const { conversations, activeConversationId, updateActiveConversation } = useAppStore()
   const conversation = conversations.find((item) => item.id === activeConversationId) || null
@@ -103,7 +115,7 @@ export function SettingsPanel(): JSX.Element {
               min={1}
               max={10}
               value={conversation.n}
-              onChange={(event) => void updateActiveConversation({ n: Number(event.target.value) })}
+              onChange={(event) => void updateActiveConversation({ n: clampInteger(event.target.value, 1, 10) })}
             />
           </label>
           <label className="field">
@@ -115,7 +127,9 @@ export function SettingsPanel(): JSX.Element {
               max={MAX_IMAGE_MAX_RETRIES}
               step={1}
               value={conversation.maxRetries}
-              onChange={(event) => void updateActiveConversation({ maxRetries: Number(event.target.value) })}
+              onChange={(event) => void updateActiveConversation({
+                maxRetries: clampInteger(event.target.value, 0, MAX_IMAGE_MAX_RETRIES)
+              })}
             />
           </label>
           <div className="advanced-settings">
@@ -165,10 +179,9 @@ export function SettingsPanel(): JSX.Element {
                   value={conversation.outputCompression ?? ''}
                   disabled={conversation.outputFormat === 'png'}
                   placeholder="留空"
-                  onChange={(event) => {
-                    const value = event.target.value.trim()
-                    void updateActiveConversation({ outputCompression: value ? Number(value) : null })
-                  }}
+                  onChange={(event) => void updateActiveConversation({
+                    outputCompression: clampOptionalInteger(event.target.value, 0, 100)
+                  })}
                 />
               </label>
               <label className="field">
@@ -223,12 +236,9 @@ export function SettingsPanel(): JSX.Element {
                   min={1}
                   step={1}
                   value={conversation.generationTimeoutSeconds}
-                  onChange={(event) => {
-                    const value = event.target.value.trim()
-                    void updateActiveConversation({
-                      generationTimeoutSeconds: value ? Number(value) : conversation.generationTimeoutSeconds
-                    })
-                  }}
+                  onChange={(event) => void updateActiveConversation({
+                    generationTimeoutSeconds: clampInteger(event.target.value, 1, 24 * 60 * 60)
+                  })}
                 />
               </label>
               <label className="field">
@@ -271,7 +281,9 @@ export function SettingsPanel(): JSX.Element {
                   step={1}
                   value={conversation.partialImages ?? 0}
                   disabled={!conversation.stream}
-                  onChange={(event) => void updateActiveConversation({ partialImages: Number(event.target.value) })}
+                  onChange={(event) => void updateActiveConversation({
+                    partialImages: clampInteger(event.target.value, 0, 3)
+                  })}
                 />
               </label>
             </div>
