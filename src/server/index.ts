@@ -322,7 +322,8 @@ async function listProviderModels(settings: SettingsStore, input: ProviderModels
     apiKey: settings.getApiKey()
   })
   const response = await fetch(`${baseURL}/v1/models`, {
-    headers: { Authorization: `Bearer ${apiKey}` }
+    headers: { Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(20_000)
   })
   const text = await response.text()
   const payload = parseModelsPayload(text)
