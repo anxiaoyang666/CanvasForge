@@ -56,6 +56,10 @@ const promptService = new PromptService(settings)
 const context: HandlerContext = { database, imageService, promptService, settings }
 
 const server = createServer((request, response) => {
+  // 基础安全响应头：禁止 MIME 嗅探、只允许同源嵌入、跨站不带完整 Referer
+  response.setHeader('X-Content-Type-Options', 'nosniff')
+  response.setHeader('X-Frame-Options', 'SAMEORIGIN')
+  response.setHeader('Referrer-Policy', 'same-origin')
   void routeRequest(request, response, context).catch((error) => {
     sendJson(response, 500, { error: error instanceof Error ? error.message : 'Internal server error.' })
   })
