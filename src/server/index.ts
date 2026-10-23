@@ -7,6 +7,14 @@ import { ImageService } from '@core/image-service'
 import { PromptService } from '@core/prompt-service'
 import { SettingsStore } from '@core/settings'
 import { WebSafeStorage } from './web-safe-storage'
+import {
+  createLoginThrottle,
+  hashAccessPassword,
+  isLegacyPasswordHash,
+  isPathInside,
+  resolveModelsRequest,
+  verifyAccessPassword
+} from './access-security'
 import type {
   AccessLoginInput,
   AccessPasswordUpdate,
@@ -48,6 +56,10 @@ const promptService = new PromptService(settings)
 const context: HandlerContext = { database, imageService, promptService, settings }
 
 const server = createServer((request, response) => {
+  // 基础安全响应头：禁止 MIME 嗅探、只允许同源嵌入、跨站不带完整 Referer
+  response.setHeader('X-Content-Type-Options', 'nosniff')
+  response.setHeader('X-Frame-Options', 'SAMEORIGIN')
+  response.setHeader('Referrer-Policy', 'same-origin')
   void routeRequest(request, response, context).catch((error) => {
     sendJson(response, 500, { error: error instanceof Error ? error.message : 'Internal server error.' })
   })
@@ -305,12 +317,13 @@ function readHistoryOptions(requestUrl: URL): HistoryListOptions {
 }
 
 async function listProviderModels(settings: SettingsStore, input: ProviderModelsInput = {}): Promise<ProviderModel[]> {
-  const publicSettings = settings.getPublicSettings()
-  const baseURL = (input.baseURL || publicSettings.baseURL).trim().replace(/\/+$/, '')
-  const apiKey = input.apiKey?.trim() || settings.getApiKey()
-  if (!apiKey) throw new Error('API key is not configured.')
+  const { baseURL, apiKey } = resolveModelsRequest(input, {
+    baseURL: settings.getPublicSettings().baseURL,
+    apiKey: settings.getApiKey()
+  })
   const response = await fetch(`${baseURL}/v1/models`, {
-    headers: { Authorization: `Bearer ${apiKey}` }
+    headers: { Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(20_000)
   })
   const text = await response.text()
   const payload = parseModelsPayload(text)
@@ -363,7 +376,7 @@ function serveDatabaseImage(response: ServerResponse, database: AppDatabase, pat
 function serveStatic(response: ServerResponse, pathname: string): void {
   const normalizedPath = normalize(pathname).replace(/^(\.\.[/\\])+/, '')
   const filePath = resolve(staticDir, normalizedPath === '/' ? 'index.html' : normalizedPath.slice(1))
-  if (!filePath.startsWith(staticDir)) {
+  if (!isPathInside(staticDir, filePath)) {
     sendJson(response, 403, { error: 'Forbidden.' })
     return
   }
@@ -431,6 +444,7 @@ function createAccessController(filePath: string) {
     sessionTokenHash?: string
   }
   const cookieName = 'canvasforge_session'
+  const loginThrottle = createLoginThrottle()
   const read = (): AccessFile => {
     if (!existsSync(filePath)) return {}
     try {
@@ -478,11 +492,17 @@ function createAccessController(filePath: string) {
       const payload = read()
       if (!payload.passwordHash) return this.status(request)
       const password = typeof input.password === 'string' ? input.password : ''
-      if (!tokenMatches(password, payload.passwordHash)) {
+      const throttleKey = request.socket.remoteAddress || 'unknown'
+      loginThrottle.assertAllowed(throttleKey)
+      if (!verifyAccessPassword(password, payload.passwordHash)) {
+        loginThrottle.recordFailure(throttleKey)
         throw new Error('访问密码不正确。')
       }
+      loginThrottle.recordSuccess(throttleKey)
       const token = randomBytes(32).toString('hex')
-      write({ ...payload, sessionTokenHash: hash(token) })
+      // 旧版本的无盐 SHA-256 密码在登录成功时升级为 scrypt
+      const passwordHash = isLegacyPasswordHash(payload.passwordHash) ? hashAccessPassword(password) : payload.passwordHash
+      write({ ...payload, passwordHash, sessionTokenHash: hash(token) })
       setSessionCookie(response, token)
       return { protectionEnabled: true, authenticated: true }
     },
@@ -500,7 +520,7 @@ function createAccessController(filePath: string) {
         return { protectionEnabled: false, authenticated: true }
       }
       const token = randomBytes(32).toString('hex')
-      write({ passwordHash: hash(password), sessionTokenHash: hash(token) })
+      write({ passwordHash: hashAccessPassword(password), sessionTokenHash: hash(token) })
       setSessionCookie(response, token)
       return { protectionEnabled: true, authenticated: this.isAllowed(request) || true }
     }
@@ -544,7 +564,7 @@ function restoreBackup(manifest: BackupManifest): void {
   for (const file of manifest.files) {
     const normalizedPath = normalize(String(file.path || '')).replace(/^(\.\.[/\\])+/, '')
     const target = resolve(restoreRoot, normalizedPath)
-    if (!target.startsWith(restoreRoot)) throw new Error('备份中包含非法路径。')
+    if (!isPathInside(restoreRoot, target) || target === resolve(restoreRoot)) throw new Error('备份中包含非法路径。')
     mkdirSync(dirname(target), { recursive: true })
     writeFileSync(target, Buffer.from(String(file.contentBase64 || ''), 'base64'))
   }

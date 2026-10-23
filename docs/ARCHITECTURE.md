@@ -176,7 +176,7 @@ API 错误大多以 HTTP 400 和 `{ error }` 返回。未捕获异常走 500。�
 | --- | --- |
 | `settings.json` | `baseURL`、`defaultModel`、`promptModel`、`encryptedApiKey` 或无法加密时的 `plainApiKey` |
 | `secret.key` | Base64 的 32 字节 AES 密钥 |
-| `access.json` | 访问密码的 SHA-256，以及当前会话 token 的 SHA-256。权限 `0600` |
+| `access.json` | 访问密码的 scrypt 哈希（`scrypt$盐$值`，旧版的无盐 SHA-256 登录成功后升级），以及当前会话 token 的 SHA-256。权限 `0600` |
 | `images/` | 生成图，文件名是历史 id |
 | `reference-images/` | 参考图 |
 | `restore-safety-copy/` | 最近一次恢复前复制出来的文件。备份时跳过这个目录 |
@@ -185,7 +185,7 @@ API 错误大多以 HTTP 400 和 `{ error }` 返回。未捕获异常走 500。�
 
 ## 访问密码与备份
 
-密码不是多用户账号。`access.json` 只保存一把密码的 SHA-256 十六进制，没有盐。登录成功后生成 32 字节随机 token，cookie 为 `canvasforge_session`，`HttpOnly`、`SameSite=Lax`、`Path=/`，没有 `Secure`，也没有 `Max-Age`。服务端只保留一个 `sessionTokenHash`，新的登录会替换旧会话。
+密码不是多用户账号。`access.json` 只保存一把密码的 scrypt 哈希（随机盐，实现见 `src/server/access-security.ts`）。旧版本写入的无盐 SHA-256 仍可登录，登录成功后改写为 scrypt。同一来源（socket 远端地址）15 分钟内失败 10 次后暂停登录。登录成功后生成 32 字节随机 token，cookie 为 `canvasforge_session`，`HttpOnly`、`SameSite=Lax`、`Path=/`，没有 `Secure`，也没有 `Max-Age`。服务端只保留一个 `sessionTokenHash`，新的登录会替换旧会话。
 
 备份把 `data/` 下除 `restore-safety-copy/` 以外的文件读成 Base64，放进 JSON：
 

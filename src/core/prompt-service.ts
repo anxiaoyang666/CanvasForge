@@ -66,7 +66,9 @@ export class PromptService {
           }
         ],
         max_output_tokens: 700
-      })
+      }),
+      // 上游不响应时不让「灵感 / 扩写」按钮一直转圈
+      signal: AbortSignal.timeout(90_000)
     })
     const responseText = await response.text()
     const payload = parseResponsesPayload(responseText)
